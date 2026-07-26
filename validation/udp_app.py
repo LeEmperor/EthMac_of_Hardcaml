@@ -9,6 +9,24 @@ Three modes:
                recovered payload straight back out. This is the host-asserted
                closure of the RX path: exit 0 = PASS, no LED eyeballing.
 
+               Each probe carries a 4-byte nonce (magic 'SQ' + 16-bit seq) in
+               the head of the app payload, and ONE sniffer stays armed for the
+               whole run, so every failure is classified rather than lumped:
+
+                 on-time  echo of seq k came back inside its own deadline
+                 late     it came back, but after its deadline (rtt printed) —
+                          nothing was dropped; look host-side/store-and-forward
+                 bad      seq matched but header/payload failed the check —
+                          forward-everything echoed a corrupted inbound frame
+                 lost     seq never seen, even after the post-run drain — a real
+                          drop (check crc_error on led2_r/led3_r at that instant)
+                 dup      the same seq echoed more than once
+                 unmatched  FPGA-sourced frame whose nonce is absent/unknown
+
+               Without the nonce these are indistinguishable: identical payloads
+               let a late echo be mistaken for the NEXT probe's echo, so one drop
+               silently shifts the whole run by one.
+
   --validate   Sniff the wire and verify the UDP datagrams the FPGA emits
                (FPGA -> host). This is the currently-validatable path: the
                Udp_mac_top TX stack (Udp_tx on Mac_top) is sim-verified and
@@ -46,16 +64,21 @@ Usage (needs CAP_NET_RAW, i.e. sudo):
     sudo python3 udp_app.py --send     --iface enx207bd25880ef
     sudo python3 udp_app.py --send --pattern alt --app-len 8 --iface enx207bd25880ef
     sudo python3 udp_app.py --echo --pattern alt --iface enx207bd25880ef
+    sudo python3 udp_app.py --echo --count 50 --iface enx207bd25880ef   # tally a run
 """
 
 import argparse
+import queue
 import sys
+import threading
+import time
 
 from scapy.all import AsyncSniffer, Ether, Raw, sendp, sniff
 
 # ── golden constants (mirror udp_tx.ml / udp_mac_top_tb.ml) ──────────────────
 FPGA_SRC_MAC = "02:00:00:00:00:01"   # Mac_top tx_datapath hardcoded SRC MAC
 FPGA_DST_MAC = "ff:ff:ff:ff:ff:ff"   # hardcoded DST MAC (broadcast)
+HOST_SRC_MAC = "de:ad:be:ef:00:02"   # src MAC we stamp on host -> FPGA frames
 ETHERTYPE = 0x0800                   # IPv4 — MAC tx_datapath now emits real 0x0800
 
 SRC_IP = "192.168.1.10"
@@ -84,6 +107,50 @@ def make_payload(pattern, n):
     if pattern == "alt":
         return bytes((0xAA if i % 2 == 0 else 0x55) for i in range(n))
     return expected_app(n)  # 'inc'
+
+
+# ── per-probe nonce (--echo) ─────────────────────────────────────────────────
+# The RX->TX bridge is a verbatim payload passthrough, so whatever we stamp into
+# the app bytes comes back untouched. Stamping a sequence number is what makes
+# "late" distinguishable from "lost": an echo can be attributed to the probe that
+# produced it no matter which window it lands in.
+ECHO_MAGIC = b"SQ"
+NONCE_LEN = 4          # 2 magic + 2 seq
+MIN_ECHO_APP_LEN = 6   # nonce + at least 2 pattern bytes
+
+
+def probe_payload(pattern, n, seq):
+    """[make_payload] with the nonce stamped over the first 4 bytes (length unchanged)."""
+    app = bytearray(make_payload(pattern, n))
+    app[0:2] = ECHO_MAGIC
+    app[2] = (seq >> 8) & 0xFF
+    app[3] = seq & 0xFF
+    return bytes(app)
+
+
+def probe_seq(app):
+    """Sequence number stamped in [app], or None if the nonce isn't there."""
+    if app is not None and len(app) >= NONCE_LEN and bytes(app[0:2]) == ECHO_MAGIC:
+        return (app[2] << 8) | app[3]
+    return None
+
+
+def extract_app(payload):
+    """App bytes out of an Ethernet payload (IPv4 ++ UDP ++ app), sized by IP total_length."""
+    if len(payload) < 28:
+        return None
+    total_length = (payload[2] << 8) | payload[3]
+    if total_length < 28 or total_length > len(payload):
+        return bytes(payload[28:])   # truncated/garbled length — hand back what's there
+    return bytes(payload[28:total_length])
+
+
+def first_diff(a, b):
+    """Index of the first differing byte, or None when equal up to the shorter length."""
+    for i in range(min(len(a), len(b))):
+        if a[i] != b[i]:
+            return i
+    return None if len(a) == len(b) else min(len(a), len(b))
 
 
 def ones_complement_sum(data):
@@ -133,7 +200,7 @@ def build_datagram(app):
 
 
 # ── validation (FPGA -> host) ─────────────────────────────────────────────────
-def check_datagram(payload, app_len, verbose=True, expected=None):
+def check_datagram(payload, app_len, verbose=True, expected=None, verdict=True):
     """Parse the Ethernet payload as IPv4/UDP and check it. Returns True on PASS.
 
     [expected] overrides the expected application payload; when None it defaults to
@@ -192,9 +259,17 @@ def check_datagram(payload, app_len, verbose=True, expected=None):
               f"  udp_len={ulen}  app={len(app)}B")
         print(f"  payload: {hexdump(app)}")
     if bytes(app) != exp:
-        fail(f"payload mismatch\n    expected: {hexdump(exp)}\n    got:      {hexdump(bytes(app))}")
+        off = first_diff(exp, bytes(app))
+        detail = f" (first differing byte at offset {off}" if off is not None else " ("
+        if off is not None and off < len(exp) and off < len(app):
+            detail += f": expected 0x{exp[off]:02x}, got 0x{app[off]:02x}"
+        detail += f"; {len(exp)}B expected vs {len(app)}B got)"
+        fail(f"payload mismatch{detail}"
+             f"\n    expected: {hexdump(exp)}"
+             f"\n    got:      {hexdump(bytes(app))}")
 
-    print(f"  => {'PASS' if ok else 'FAIL'}")
+    if verdict:
+        print(f"  => {'PASS' if ok else 'FAIL'}")
     return ok
 
 
@@ -228,7 +303,7 @@ def validate(iface, app_len, count):
 # ── send (host -> FPGA, RX path) ──────────────────────────────────────────────
 def send(iface, app_len, count, pattern):
     app = make_payload(pattern, app_len)
-    frame = Ether(dst=FPGA_DST_MAC, src="de:ad:be:ef:00:02", type=ETHERTYPE) / Raw(
+    frame = Ether(dst=FPGA_DST_MAC, src=HOST_SRC_MAC, type=ETHERTYPE) / Raw(
         build_datagram(app)
     )
     print(f"Sending on {iface}: ethertype 0x{ETHERTYPE:04x}, "
@@ -251,43 +326,189 @@ def send(iface, app_len, count, pattern):
 
 
 # ── echo (host -> FPGA -> host, loopback RX+TX path) ──────────────────────────
-def echo(iface, app_len, count, pattern, timeout):
-    """Send a datagram and assert the FPGA echoes it back with the SAME payload.
+def echo(iface, app_len, count, pattern, timeout, gap, drain=None):
+    """Send [count] nonce-tagged datagrams and classify how each one comes back.
 
     This closes the loop: the loopback harness (udp_loopback_validation_harness)
     parses the received datagram and feeds the recovered app payload straight back
     out through the RX->TX bridge, re-wrapping it in fresh IPv4/UDP/Ethernet
     framing. So a PASS means the whole MAC->IPv4->UDP RX chain AND the UDP->IPv4->MAC
     TX chain are byte-correct — host-asserted, no LED eyeballing.
+
+    Two properties make late/lost decidable, unlike a per-probe sniffer over
+    identical payloads:
+
+      * every probe carries a distinct seq nonce, so an echo is attributed to the
+        probe that produced it regardless of which window it lands in;
+      * ONE sniffer stays armed across the whole run (armed via started_callback
+        before the first send — AsyncSniffer.start() returns before pcap is open,
+        so sending straight after it can genuinely miss a microsecond-latency
+        echo), and a post-run drain window catches stragglers.
     """
-    app = make_payload(pattern, app_len)
-    frame = Ether(dst=FPGA_DST_MAC, src="de:ad:be:ef:00:02", type=ETHERTYPE) / Raw(
-        build_datagram(app)
-    )
-    print(f"Echo test on {iface}: send {app_len}B (pattern={pattern}), "
-          f"expect the FPGA to echo it back within {timeout}s")
-    print(f"  app payload sent: {hexdump(app)}\n")
+    if app_len < MIN_ECHO_APP_LEN:
+        print(f"--echo needs --app-len >= {MIN_ECHO_APP_LEN} "
+              f"({NONCE_LEN}-byte nonce + payload); got {app_len}")
+        return False
+    # 'lost' can only ever mean "not seen within deadline + drain" — the drain is
+    # that horizon. Widen it (--drain) if stragglers are landing outside it.
+    drain = timeout if drain is None else drain
 
-    n_pass = 0
+    probes = {}                     # seq -> {app, t0, rtt, status, window}
+    stats = {"dup": 0, "unmatched": 0}
+    cur = {"k": None}               # probe window we are currently inside
+    q = queue.Queue()
+    armed = threading.Event()
+
+    def on_pkt(pkt):
+        q.put((time.perf_counter(), pkt))
+
+    sniffer = AsyncSniffer(iface=iface, lfilter=is_fpga, prn=on_pkt, store=False,
+                           started_callback=armed.set)
+    sniffer.start()
+    if not armed.wait(timeout=5.0):
+        print(f"FAIL: sniffer never armed on {iface} (check --iface / CAP_NET_RAW)")
+        return False
+    time.sleep(0.05)   # let pcap settle past the arm callback
+
+    def classify(t_arr, pkt):
+        """Attribute one FPGA-sourced frame to its probe and record the verdict."""
+        payload = bytes(pkt[Ether].payload)
+        app_rx = extract_app(payload)
+        seq = probe_seq(app_rx)
+        rec = probes.get(seq) if seq is not None else None
+        if rec is None:
+            stats["unmatched"] += 1
+            why = "no nonce" if seq is None else f"seq {seq} never sent"
+            print(f"  ?? unmatched FPGA frame ({len(payload)}B payload, {why})")
+            print(f"     app: {hexdump(app_rx or b'')}")
+            return
+        if rec["status"] is not None:
+            stats["dup"] += 1
+            print(f"  ?? duplicate echo of seq {seq} (already {rec['status']})")
+            return
+        rec["rtt"] = t_arr - rec["t0"]
+        ok = check_datagram(payload, app_len, verbose=False, expected=rec["app"],
+                            verdict=False)
+        if not ok:
+            rec["status"] = "bad"
+        elif rec["rtt"] > timeout:
+            rec["status"] = "late"
+        else:
+            rec["status"] = "on-time"
+        where = ""
+        if cur["k"] is None:
+            where = " [drain]"
+        elif cur["k"] != rec["window"]:
+            where = f" [picked up during probe {cur['k']}]"
+        print(f"  seq {seq}: {rec['status'].upper()}  rtt={rec['rtt'] * 1e3:.2f} ms{where}")
+
+    print(f"Echo test on {iface}: {count} probe(s) of {app_len}B (pattern={pattern}), "
+          f"deadline {timeout}s each, {gap}s inter-probe gap, {drain}s drain")
+    print(f"  nonce: {NONCE_LEN}B ('{ECHO_MAGIC.decode()}' + 16-bit seq) at the head "
+          f"of each app payload\n")
+
     for k in range(count):
-        # start sniffing BEFORE sending — the echo returns in microseconds. Filter
-        # to FPGA-sourced frames so our own outgoing frame is ignored.
-        sniffer = AsyncSniffer(iface=iface, lfilter=is_fpga, count=1, store=True)
-        sniffer.start()
+        seq = k & 0xFFFF
+        app = probe_payload(pattern, app_len, seq)
+        frame = Ether(dst=FPGA_DST_MAC, src=HOST_SRC_MAC, type=ETHERTYPE) / Raw(
+            build_datagram(app)
+        )
+        cur["k"] = k
+        probes[seq] = {"app": app, "t0": time.perf_counter(), "rtt": None,
+                       "status": None, "window": k}
+        print(f"-- probe {k + 1}/{count} (seq {seq}) --")
         sendp(frame, iface=iface, count=1, verbose=False)
-        pkts = sniffer.join(timeout=timeout) or sniffer.results
-        print(f"-- echo {k + 1}/{count} --")
-        if not pkts:
-            print(f"  FAIL: no echo within {timeout}s")
-            print()
-            continue
-        payload = bytes(pkts[0][Ether].payload)
-        if check_datagram(payload, app_len, expected=app):
-            n_pass += 1
-        print()
+        deadline = probes[seq]["t0"] + timeout
+        # Keep servicing the queue until THIS probe is answered; echoes of earlier
+        # probes that show up meanwhile are classified (as late) and don't count here.
+        while probes[seq]["status"] is None:
+            remain = deadline - time.perf_counter()
+            if remain <= 0:
+                break
+            try:
+                t_arr, pkt = q.get(timeout=remain)
+            except queue.Empty:
+                break
+            classify(t_arr, pkt)
+        if probes[seq]["status"] is None:
+            print(f"  seq {seq}: no echo within {timeout}s — late-vs-lost decided at drain")
+        if gap:
+            time.sleep(gap)
 
-    print(f"==== {n_pass}/{count} echoes passed ====")
-    return n_pass == count and count > 0
+    # Drain: anything still unanswered gets one more timeout to show up late.
+    cur["k"] = None
+    unanswered = sum(1 for r in probes.values() if r["status"] is None)
+    if unanswered:
+        print(f"\n-- drain window ({drain}s) for {unanswered} unanswered probe(s) --")
+    drain_end = time.perf_counter() + (drain if unanswered else 0.2)
+    while any(r["status"] is None for r in probes.values()) or not unanswered:
+        remain = drain_end - time.perf_counter()
+        if remain <= 0:
+            break
+        try:
+            t_arr, pkt = q.get(timeout=remain)
+        except queue.Empty:
+            break
+        classify(t_arr, pkt)
+
+    try:
+        sniffer.stop()
+    except Exception:
+        pass
+    while True:                       # whatever the sniffer queued as it wound down
+        try:
+            t_arr, pkt = q.get_nowait()
+        except queue.Empty:
+            break
+        classify(t_arr, pkt)
+
+    for rec in probes.values():
+        if rec["status"] is None:
+            rec["status"] = "lost"
+
+    # ── summary ──────────────────────────────────────────────────────────────
+    tally = {"on-time": 0, "late": 0, "bad": 0, "lost": 0}
+    for rec in probes.values():
+        tally[rec["status"]] += 1
+    rtts = sorted(r["rtt"] * 1e3 for r in probes.values() if r["rtt"] is not None)
+
+    print(f"\n==== echo summary: {count} probe(s) ====")
+    for k_ in ("on-time", "late", "bad", "lost"):
+        print(f"  {k_:<9} {tally[k_]}")
+    if stats["dup"]:
+        print(f"  {'dup':<9} {stats['dup']}")
+    if stats["unmatched"]:
+        print(f"  {'unmatched':<9} {stats['unmatched']}")
+    if rtts:
+        print(f"  rtt (delivered): min {rtts[0]:.2f} / median "
+              f"{rtts[len(rtts) // 2]:.2f} / max {rtts[-1]:.2f} ms")
+    bad_probes = [(s, r) for s, r in sorted(probes.items()) if r["status"] != "on-time"]
+    if bad_probes:
+        print("  not on-time:")
+        for s, r in bad_probes:
+            rtt = f"{r['rtt'] * 1e3:.2f} ms" if r["rtt"] is not None else "-"
+            print(f"    seq {s:<5} {r['status']:<8} rtt={rtt}")
+
+    # Point at the right suspect (see UDP_FULL_DUPLEX_HARNESS_PLAN.md, board finding).
+    if tally["late"]:
+        print("  NOTE: late echoes are NOT drops — the FPGA delivered them. Suspect the"
+              "\n        host (pcap scheduling / a too-tight --timeout) or a TX"
+              "\n        store-and-forward stall, not the link.")
+    if tally["bad"]:
+        print("  NOTE: 'bad' = forward-everything echoed a corrupted inbound frame with a"
+              "\n        regenerated FCS. Fix is to gate the bridge's tx_start on"
+              "\n        frame_done & ~frame_error (plan Phase 1, next-step 2).")
+    if tally["lost"]:
+        print(f"  NOTE: 'lost' = never seen within its {timeout}s deadline NOR the {drain}s"
+              "\n        drain, i.e. a real drop. Check led2_r/led3_r (held crc_error) at"
+              "\n        the instant of the failure: lit => inbound corruption; dark =>"
+              "\n        the drop is on the outbound leg / RX FIFO / an ipv4_rx reject."
+              "\n        Raise --drain if you suspect stragglers past the horizon.")
+
+    ok = (count > 0 and tally["on-time"] == count
+          and stats["dup"] == 0 and stats["unmatched"] == 0)
+    print(f"==== {'PASS' if ok else 'FAIL'} ====")
+    return ok
 
 
 def main():
@@ -299,7 +520,9 @@ def main():
     ap.add_argument("--iface", default=DEFAULT_IFACE, help=f"network interface (default {DEFAULT_IFACE})")
     ap.add_argument("--app-len", type=int, default=DEFAULT_APP_LEN, help=f"application payload length (default {DEFAULT_APP_LEN})")
     ap.add_argument("--count", type=int, default=1, help="frames to capture/send/echo (default 1)")
-    ap.add_argument("--timeout", type=float, default=2.0, help="--echo: seconds to wait for each echo (default 2.0)")
+    ap.add_argument("--timeout", type=float, default=2.0, help="--echo: per-probe deadline in seconds (default 2.0); an echo after this is LATE, not lost")
+    ap.add_argument("--gap", type=float, default=0.05, help="--echo: seconds between probes (default 0.05); the bridge is single-frame, so pressure raises the drop rate")
+    ap.add_argument("--drain", type=float, default=None, help="--echo: seconds to keep listening after the last probe before calling anything lost (default: same as --timeout)")
     ap.add_argument("--pattern", choices=("inc", "alt"), default="inc",
                     help="--send/--echo payload pattern: 'inc' incrementing (default), "
                          "'alt' alternating 0xAA/0x55 (led[3:0] toggles 0xA<->0x5)")
@@ -309,7 +532,8 @@ def main():
         ok = validate(args.iface, args.app_len, args.count)
         sys.exit(0 if ok else 1)
     elif args.echo:
-        ok = echo(args.iface, args.app_len, args.count, args.pattern, args.timeout)
+        ok = echo(args.iface, args.app_len, args.count, args.pattern, args.timeout,
+                  args.gap, args.drain)
         sys.exit(0 if ok else 1)
     else:
         send(args.iface, args.app_len, args.count, args.pattern)
