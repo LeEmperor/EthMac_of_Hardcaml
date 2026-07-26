@@ -31,13 +31,8 @@ open! Signal
    The board-harness targets instantiate the same tops that used to live in
    validation/generate_validation.exe (now folded in here). *)
 
-module Udp = Udp.Make (struct
-  let bus_width = 8
-  let bus_implementation = Udp.Bus_Implementation.BYTE_WISE
-end)
-
 module Circ_mac = Circuit.With_interface (Mac_top.I) (Mac_top.O)
-module Circ_udp = Circuit.With_interface (Udp.I) (Udp.O)
+module Circ_udp = Circuit.With_interface (Udp_mac_top.I) (Udp_mac_top.O)
 
 module Circ_validation =
   Circuit.With_interface
@@ -95,7 +90,7 @@ let udp_cmd =
   target ~summary:"UDP-over-MAC stack -> hardcaml_udp_with_mac.v" ~build:(fun scope ->
     emit
       ~path:"hardcaml_udp_with_mac.v"
-      (Circ_udp.create_exn ~name:"Udp_stack_w_mac" (Udp.create scope)))
+      (Circ_udp.create_exn ~name:"Udp_stack_w_mac" (Udp_mac_top.create scope)))
 ;;
 
 let validation_cmd =
