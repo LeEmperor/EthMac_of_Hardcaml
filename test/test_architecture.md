@@ -142,6 +142,30 @@ OCaml quoted-string literal: ```{|hello world|}```, similar to how "hello\nworld
 ```[%sexp ...]``` follows ```[%sexp (completed_bytes : int list)]```. Converts a value into an S-expression using it's declared type.
 Example ```completed_bytes = [171; 18]``` produces ```(171 18)```.
 
-This sexp can then be fed into something like print_s.
+This sexp can then be fed into something like print_s via ```print_s [%sexp (completed_bytes : int list)]```.
 
 
+How can the following line exist: 
+```[%test_result: int list] actual_bytes expected_bytes```
+
+The left side of a function application in OCaml can be any expression, not only a function name.
+
+For example, ```(fun x -> x + 1) 5```. ```(fun x -> x + 1)``` evalutes to a function, that then takes in 5 as it's argument.
+
+Likewise ```[%test_result: int list]``` is an extension expression that the PPX rewrites into a function-like value specialized for int lists.
+
+Therefore, ```[%test_result: int list] actual_bytes ~expect:expected_bytes``` is treated as ```([%test_result: int lits]) actual_bytes ~expect:expected_bytes```, and after the PPX rewrites, it *may* resemble ```generated_list_function actual_bytes ~expect:expected_bytes```.
+
+# Useful PPX Idioms and Categories
+
+1. ```let%expect_test "name" = ...``` extension attached to a let.
+
+2. ```[%expect {| output |}]``` expression extension with a string payload.
+
+3. ```[%test_result: int list] actual ~expected:expected_bytes``` expression extension with a typed payload, followed by an ordinary function application.
+
+4. ```[%sexp (value: Some_type.t)]``` expression extension generating an S-expression.
+
+5. ```type t = {value : int} [@@deriving sexp, equal]``` an attribute attached to a type declaration, generating functions such as sexp_of_t and eqaul.
+
+```%``` constructs compile-time requests to generate ordinary OCaml code. They are not special runtime objects by any means.
