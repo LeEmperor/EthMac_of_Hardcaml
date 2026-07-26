@@ -26,12 +26,11 @@
     led2_b    in_payload (RX active)
     led3_r    last-frame CRC bad
 
-  ETHERTYPE CAVEAT: Mac_top's tx_datapath still emits ethertype 0x9999, so a host
-  kernel will NOT dissect these as real IPv4/UDP. That is intentional for first
-  bring-up — validate with a raw sniff (see validation/udp_app.py --validate),
-  which parses the IPv4/UDP bytes by hand. Parameterize the MAC ethertype to
-  0x0800 later (see the CAVEAT in lib/udp/udp_mac_top.ml) once the framing is
-  trusted and you want a real kernel UDP socket to accept the datagrams.
+  ETHERTYPE: Udp_mac_top drives Mac_top with ~ethertype:0x0800, so these are real
+  IPv4/UDP frames a host kernel will dissect (Wireshark decodes them as UDP).
+  validation/udp_app.py --validate still raw-sniffs and hand-parses the IPv4/UDP
+  bytes — that keeps the check independent of kernel routing/socket state and lets
+  it assert on every field — but a plain UDP-socket recvfrom would now also work.
 *)
 
 open! Core

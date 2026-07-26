@@ -159,11 +159,15 @@ module Make (C : Config) = struct
 
           ; ( Header
             , [ w.tvalid <--. 1                          (* header byte always valid *)
+              ; when_
+                  ((r.hdr_counter.value ==:. udp_hdr_len - 1)
+                   &: (r.payload_rem.value ==:. 0))
+                  [ w.tlast <--. 1 ]                    (* describe the final beat even while stalled *)
               ; when_ l4_tready                           (* advance only when accepted *)
                   [ if_ (r.hdr_counter.value ==:. udp_hdr_len - 1)
                       [ r.hdr_counter <--. 0
                       ; if_ (r.payload_rem.value ==:. 0)  (* zero-length datagram *)
-                          [ w.tlast <--. 1; r.busy <--. 0; sm.set_next Idle ]
+                          [ r.busy <--. 0; sm.set_next Idle ]
                           [ sm.set_next Payload ]
                       ]
                       [ r.hdr_counter <-- r.hdr_counter.value +:. 1 ]
@@ -173,10 +177,10 @@ module Make (C : Config) = struct
           ; ( Payload
             , [ w.p_ready <-- l4_tready                   (* forward backpressure *)
               ; w.tvalid  <-- payload_tvalid
+              ; w.tlast   <-- (payload_tvalid &: (r.payload_rem.value ==:. 1))
               ; when_ (payload_tvalid &: l4_tready)
                   [ if_ (r.payload_rem.value ==:. 1)
-                      [ w.tlast    <--. 1                 (* final payload byte *)
-                      ; r.payload_rem <--. 0
+                      [ r.payload_rem <--. 0
                       ; r.busy     <--. 0
                       ; sm.set_next Idle
                       ]

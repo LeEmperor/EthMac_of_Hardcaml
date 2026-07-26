@@ -1,4 +1,4 @@
-(executables
+(tests
  (names rx_path_tb rx_byte_assembler_tb rx_datapath_tb rx_controller_tb crc_tb tx_byte_disassembler_tb tx_crc_tb tx_path_tb)
  (libraries core hardcaml mii_of_hardcaml hardcaml_waveterm helper_tb_functions)
  (preprocess

@@ -1,4 +1,4 @@
-(executables
+(tests
  (names ipv4_tx_tb ipv4_rx_tb)
  (libraries core hardcaml ipv4_of_hardcaml hardcaml_waveterm helper_tb_functions)
  (preprocess

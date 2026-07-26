@@ -104,6 +104,15 @@ module Make (C : Config) = struct
       crc_error   : 'a;            (* MAC reported a bad Ethernet FCS (rx_tuser) *)
       busy        : 'a;
 
+      (* frame-level late-status channel (decoupled from the payload tlast). The
+         FCS/CRC verdict for a frame only becomes known at the MAC's real
+         end-of-frame — which, with MAC zero-padding, lands AFTER this block's
+         m_tlast. So it cannot ride the payload stream; it is delivered here as a
+         1-cycle [frame_done] pulse (the MAC's rx_tlast, in any state) carrying the
+         [frame_error] verdict, for a consumer to latch. *)
+      frame_done  : 'a;            (* pulse on the final Ethernet-frame byte *)
+      frame_error : 'a;            (* valid with frame_done: bad FCS (rx_tuser) *)
+
       keep : 'a;
     } [@@deriving hardcaml]
   end
@@ -286,6 +295,12 @@ module Make (C : Config) = struct
       else gnd
     in
 
+    (* Frame-level late status: fire on the MAC's actual end-of-frame (rx_tlast,
+       in ANY state — Payload for exact-fit frames, Flush while dropping padding),
+       combinational so the verdict aligns with the byte that carries it. *)
+    let frame_done  = i.I.rx_tvalid &: i.I.rx_tlast in
+    let frame_error = i.I.rx_tuser in
+
     { O.m_axis_tready = w.m_ready.value
     ; m_tdata        = i.I.rx_tdata
     ; m_tvalid       = w.tvalid.value
@@ -299,6 +314,8 @@ module Make (C : Config) = struct
     ; checksum_ok    = r.csum_ok.value
     ; crc_error      = r.crc_err.value
     ; busy           = r.busy.value
+    ; frame_done
+    ; frame_error
     ; keep
     }
   ;;

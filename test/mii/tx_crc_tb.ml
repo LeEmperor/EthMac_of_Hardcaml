@@ -4,9 +4,8 @@ open! Mii_of_hardcaml
 open! Hardcaml_waveterm
 open! Helper_tb_functions
 
-(* Set to [true] to dump the ASCII waveform to stdout at the end of the run.
-   The VCD (waves_tx_crc.vcd) is always written regardless of this flag. *)
-let print_waveform = false
+let waveform_enabled =
+  Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform")
 
 let () =
   print_endline "=== Running MAC TX CRC Testbench ==="
@@ -45,8 +44,16 @@ let () =
   let open Bits in
   let sim, waves, inputs, outputs = create_sim () in
 
-  Out_channel.with_file "waves_tx_crc.vcd" ~f:(fun oc ->
-  let sim = Vcd.wrap oc sim in
+  let run sim =
+  let checks = ref 0 in
+  let failures = ref 0 in
+  let check_hex ~case ~expected ~observed =
+    Int.incr checks;
+    if expected <> observed then begin
+      Int.incr failures;
+      eprintf "%s: expected 0x%08x, observed 0x%08x\n" case expected observed
+    end
+  in
 
   let t_rst      = inputs.reset in
   let t_en       = inputs.en in
@@ -56,12 +63,13 @@ let () =
 
   let cycle () =
     Cyclesim.cycle sim;
-    printf "  data=0x%02x valid=%d  crc_reg=0x%08x  fcs_byte(sel=%d)=0x%02x\n"
-      (Bits.to_int_trunc !(t_data))
-      (Bits.to_int_trunc !(t_valid))
-      (Bits.to_int_trunc !(outputs.crc_out))
-      (Bits.to_int_trunc !(t_byte_sel))
-      (Bits.to_int_trunc !(outputs.fcs_byte))
+    if waveform_enabled then
+      printf "  data=0x%02x valid=%d  crc_reg=0x%08x  fcs_byte(sel=%d)=0x%02x\n"
+        (Bits.to_int_trunc !(t_data))
+        (Bits.to_int_trunc !(t_valid))
+        (Bits.to_int_trunc !(outputs.crc_out))
+        (Bits.to_int_trunc !(t_byte_sel))
+        (Bits.to_int_trunc !(outputs.fcs_byte))
   in
 
   let reset () =
@@ -102,6 +110,7 @@ let () =
   let hw_fcs = hw_raw lxor 0xFFFFFFFF in
   printf "  hw crc_out = 0x%08x  hw FCS = 0x%08x  %s\n"
     hw_raw hw_fcs (if hw_fcs = expected_fcs then "PASS" else "FAIL");
+  check_hex ~case:"standard vector FCS" ~expected:expected_fcs ~observed:hw_fcs;
 
   (* verify each FCS byte individually via byte_sel *)
   t_valid <-- 0;
@@ -110,7 +119,8 @@ let () =
     Cyclesim.cycle sim;
     let got = Bits.to_int_trunc !(outputs.fcs_byte) in
     printf "  byte_sel=%d: fcs_byte=0x%02x  (expect 0x%02x)  %s\n"
-      sel got expected (if got = expected then "PASS" else "FAIL")
+      sel got expected (if got = expected then "PASS" else "FAIL");
+    check_hex ~case:(sprintf "FCS byte %d" sel) ~expected ~observed:got
   );
 
   (* -- test 2: en drop mid-frame resets accumulator -- *)
@@ -126,6 +136,7 @@ let () =
   let hw_fcs2 = Bits.to_int_trunc !(outputs.crc_out) lxor 0xFFFFFFFF in
   printf "  hw FCS after reset+rerun = 0x%08x  (expect 0x%08x)  %s\n"
     hw_fcs2 expected_fcs (if hw_fcs2 = expected_fcs then "PASS" else "FAIL");
+  check_hex ~case:"enable-drop recovery" ~expected:expected_fcs ~observed:hw_fcs2;
 
   (* -- test 3: different payload cross-checks against sw reference -- *)
   printf "\n-- [test 3] arbitrary payload matches sw reference CRC --\n";
@@ -137,8 +148,14 @@ let () =
   let hw_fcs3 = Bits.to_int_trunc !(outputs.crc_out) lxor 0xFFFFFFFF in
   printf "  sw FCS = 0x%08x  hw FCS = 0x%08x  %s\n"
     sw_fcs3 hw_fcs3 (if hw_fcs3 = sw_fcs3 then "PASS" else "FAIL");
+  check_hex ~case:"arbitrary payload FCS" ~expected:sw_fcs3 ~observed:hw_fcs3;
 
-  print_endline "\n=== SIMULATION COMPLETE ===";
-  if print_waveform then Waveform.print ~display_width:96 waves;
-  )
+  printf "\n==== SUMMARY: %d checks, %d failures ====\n" !checks !failures;
+  if waveform_enabled then Waveform.print ~display_width:96 waves;
+  if !failures <> 0 then exit 1
+  in
+  if waveform_enabled
+  then
+    Out_channel.with_file "waves_tx_crc.vcd" ~f:(fun oc -> run (Vcd.wrap oc sim))
+  else run sim
 ;;

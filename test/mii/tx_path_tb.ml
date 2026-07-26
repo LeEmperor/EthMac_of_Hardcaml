@@ -33,9 +33,8 @@ open! Mii_of_hardcaml
 open! Hardcaml_waveterm
 open! Helper_tb_functions
 
-(* Set to [true] to dump the ASCII waveform to stdout at the end of the run.
-   The VCD (waves_tx_top.vcd) is always written regardless of this flag. *)
-let print_waveform = false
+let waveform_enabled =
+  Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform")
 
 let () = print_endline "=== Running MAC TX Top Testbench ==="
 
@@ -77,7 +76,7 @@ let bytes_of_int ~n x =
    Returns the reassembled byte list (lo nibble first per byte)
 *)
 
-let collect_frame ~cycle ~outputs ~max_wait =
+let collect_frame ~label ~cycle ~outputs ~max_wait =
   let tx_en () = Bits.to_bool    !(outputs.Mac_top.O.tx_en) in (* ! grabs value from a container ref *)
   let tx_d  () = Bits.to_int_trunc !(outputs.Mac_top.O.tx_d) in
   let nibbles = ref [] in
@@ -89,6 +88,8 @@ let collect_frame ~cycle ~outputs ~max_wait =
     then waiting := false
     else (cycle (); incr i)
   done;
+  if !waiting then
+    failwithf "%s: tx_en did not assert within %d cycles" label max_wait ();
   (* collect while tx_en is high, bounded so an underflow (FSM stall) fails
      loudly instead of hanging the sim forever *)
   let guard = ref 0 in
@@ -97,8 +98,12 @@ let collect_frame ~cycle ~outputs ~max_wait =
     cycle ();
     incr guard
   done;
-  if !guard >= max_wait then
-    printf "WARNING: tx_en never deasserted within %d cycles — likely FSM stall (payload underflow?)\n" max_wait;
+  if tx_en () then
+    failwithf
+      "%s: tx_en did not deassert within %d cycles (possible payload underflow)"
+      label
+      max_wait
+      ();
   (* reassemble pairs [lo; hi] → byte *)
   let rec pair = function
     | lo :: hi :: rest -> ((hi lsl 4) lor lo) :: pair rest
@@ -111,8 +116,7 @@ let () =
   let open Bits in
   let sim, waves, inputs, outputs = create_sim () in
 
-  Out_channel.with_file "waves_tx_top.vcd" ~f:(fun oc ->
-  let sim = Vcd.wrap oc sim in
+  let run sim =
 
   let cycle () = Cyclesim.cycle sim in
 
@@ -176,7 +180,7 @@ let () =
     cycle ();
     inputs.tx_start <-- 0;
 
-    let frame = collect_frame ~cycle ~outputs ~max_wait:500 in
+    let frame = collect_frame ~label ~cycle ~outputs ~max_wait:500 in
     let exp_frame_len = 22 + plen + 4 in
     printf "frame length: %d bytes (expect %d)\n" (List.length frame) exp_frame_len;
 
@@ -230,5 +234,10 @@ let () =
     (List.count results ~f:Fn.id) (List.length results);
 
   print_endline "\n=== SIMULATION COMPLETE ===";
-  if print_waveform then Waveform.print ~display_width:100 waves;
-  )
+  if waveform_enabled then Waveform.print ~display_width:100 waves;
+  if not (List.for_all results ~f:Fn.id) then exit 1
+  in
+  if waveform_enabled
+  then
+    Out_channel.with_file "waves_tx_top.vcd" ~f:(fun oc -> run (Vcd.wrap oc sim))
+  else run sim

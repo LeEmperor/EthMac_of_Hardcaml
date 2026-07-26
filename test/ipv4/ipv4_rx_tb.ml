@@ -101,7 +101,7 @@ let () =
      (= comb(S_N, ..)). We hold those in [q_*] and pair them with the byte we're
      presenting this iteration. tdata itself is just the input byte we drive, so
      we collect that directly rather than reading it back. *)
-  let run ~frame ~eth_type ~fcs_bad ~stall_every =
+  let run ~label ~expect_output ~frame ~eth_type ~fcs_bad ~stall_every =
     reset ();
     let n = List.length frame in
     let arr = Array.of_list frame in
@@ -113,6 +113,7 @@ let () =
     let meta        = ref None in         (* (protocol, payload_length, src, dst) at l4_start *)
     let saw_ip_last = ref false in
     let guard       = ref 0 in
+    let guard_limit = (n * 2) + 64 in
     (* qualifiers for the CURRENT cycle's state S_N, read at the end of the prior
        iteration. Initialised to the post-reset Idle state (nothing valid). *)
     let q_valid = ref false in
@@ -120,7 +121,7 @@ let () =
     let q_first = ref false in
     let transfer = ref false in
     let accepted = ref false in
-    while (not !saw_ip_last) && !guard < n + 30 do
+    while (!ptr < n || (expect_output && not !saw_ip_last)) && !guard < guard_limit do
       let has = !ptr < n in
       let is_last_frame_byte = has && !ptr = n - 1 in
       let stalling = stall_every > 0 && !guard % (stall_every + 1) = stall_every in
@@ -164,6 +165,21 @@ let () =
       if !accepted then incr ptr;
       incr guard
     done;
+    if !ptr < n then
+      failwithf
+        "%s: input drain timed out after %d cycles at byte %d of %d"
+        label
+        guard_limit
+        !ptr
+        n
+        ();
+    if expect_output && not !saw_ip_last then
+      failwithf
+        "%s: output drain timed out after %d cycles (received %d bytes)"
+        label
+        guard_limit
+        (List.length !collected)
+        ();
 
     (* drain a couple cycles so busy/crc_error settle *)
     i.rx_tvalid <-- 0; i.rx_tfirst <-- 0; i.rx_tlast <-- 0;
@@ -187,7 +203,7 @@ let () =
   printf "\n-- test 1: 26B UDP, no stalls --\n";
   let l4 = List.init 26 ~f:(fun k -> (0x40 + k) land 0xFF) in
   let frame = ip_header ~l4_len:26 ~protocol:17 ~src_ip ~dst_ip ~corrupt_cksum:false @ l4 in
-  let got, tlast_idx, meta, csum_ok, crc_err = run ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
+  let got, tlast_idx, meta, csum_ok, crc_err = run ~label:"test 1: 26B UDP" ~expect_output:true ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
   expect ~label:"payload bytes match" (List.equal Int.equal got l4);
   expect ~label:"tlast on final payload byte" (tlast_idx = List.length l4 - 1);
   expect ~label:"checksum_ok" csum_ok;
@@ -206,7 +222,7 @@ let () =
   let hdr = ip_header ~l4_len:10 ~protocol:17 ~src_ip ~dst_ip ~corrupt_cksum:false in
   let pad = List.init (46 - (20 + 10)) ~f:(fun _ -> 0x00) in
   let frame = hdr @ l4 @ pad in
-  let got, tlast_idx, meta, csum_ok, _ = run ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
+  let got, tlast_idx, meta, csum_ok, _ = run ~label:"test 2: padded UDP" ~expect_output:true ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
   expect ~label:"payload = 10 bytes (pad stripped)" (List.equal Int.equal got l4);
   expect ~label:"tlast at index 9" (tlast_idx = 9);
   expect ~label:"checksum_ok" csum_ok;
@@ -218,7 +234,7 @@ let () =
   printf "\n-- test 3: 20B TCP, l4_tready stalls every 3 --\n";
   let l4 = List.init 20 ~f:(fun k -> (0x10 + k) land 0xFF) in
   let frame = ip_header ~l4_len:20 ~protocol:6 ~src_ip ~dst_ip ~corrupt_cksum:false @ l4 in
-  let got, tlast_idx, meta, csum_ok, _ = run ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:3 in
+  let got, tlast_idx, meta, csum_ok, _ = run ~label:"test 3: stalled TCP" ~expect_output:true ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:3 in
   expect ~label:"payload bytes match under stall" (List.equal Int.equal got l4);
   expect ~label:"tlast on final byte" (tlast_idx = List.length l4 - 1);
   expect ~label:"checksum_ok" csum_ok;
@@ -232,26 +248,27 @@ let () =
   printf "\n-- test 4: bad checksum must be dropped (no L4 output) --\n";
   let l4 = List.init 16 ~f:(fun k -> (0x50 + k) land 0xFF) in
   let frame = ip_header ~l4_len:16 ~protocol:17 ~src_ip ~dst_ip ~corrupt_cksum:true @ l4 in
-  let got, _, _, csum_ok, _ = run ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
+  let got, _, _, csum_ok, _ = run ~label:"test 4: bad checksum" ~expect_output:false ~frame ~eth_type:0x0800 ~fcs_bad:false ~stall_every:0 in
   expect ~label:"no payload emitted" (List.is_empty got);
   expect ~label:"checksum_ok deasserted" (not csum_ok);
 
   (* ---- Test 5: non-IPv4 ethertype (ARP 0x0806) -> flushed ---- *)
   printf "\n-- test 5: non-IPv4 ethertype must be flushed --\n";
   let frame = List.init 30 ~f:(fun k -> (0xA0 + k) land 0xFF) in
-  let got, _, _, _, _ = run ~frame ~eth_type:0x0806 ~fcs_bad:false ~stall_every:0 in
+  let got, _, _, _, _ = run ~label:"test 5: non-IPv4" ~expect_output:false ~frame ~eth_type:0x0806 ~fcs_bad:false ~stall_every:0 in
   expect ~label:"no payload emitted" (List.is_empty got);
 
   (* ---- Test 6: good frame but MAC signals bad FCS (rx_tuser) -> crc_error ---- *)
   printf "\n-- test 6: clean header, MAC FCS error flag forwarded --\n";
   let l4 = List.init 24 ~f:(fun k -> (0x30 + k) land 0xFF) in
   let frame = ip_header ~l4_len:24 ~protocol:17 ~src_ip ~dst_ip ~corrupt_cksum:false @ l4 in
-  let got, tlast_idx, _, csum_ok, crc_err = run ~frame ~eth_type:0x0800 ~fcs_bad:true ~stall_every:0 in
+  let got, tlast_idx, _, csum_ok, crc_err = run ~label:"test 6: bad FCS" ~expect_output:true ~frame ~eth_type:0x0800 ~fcs_bad:true ~stall_every:0 in
   expect ~label:"payload still forwarded" (List.equal Int.equal got l4);
   expect ~label:"tlast on final byte" (tlast_idx = List.length l4 - 1);
   expect ~label:"checksum_ok (header intact)" csum_ok;
   expect ~label:"crc_error asserted" crc_err;
 
   printf "\n==== SUMMARY: %d/%d checks passed ====\n" !pass_count !test_count;
-  print_endline "\n=== SIMULATION COMPLETE ==="
+  print_endline "\n=== SIMULATION COMPLETE ===";
+  if !pass_count <> !test_count then exit 1
 ;;

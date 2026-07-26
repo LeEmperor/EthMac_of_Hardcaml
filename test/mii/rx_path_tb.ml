@@ -23,6 +23,9 @@ open! Mii_of_hardcaml
 open! Hardcaml_waveterm
 open! Helper_tb_functions
 
+let waveform_enabled =
+  Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform")
+
 let () = print_endline "=== Running MAC RX Top Testbench ==="
 
 module Waveform = Hardcaml_waveterm.Waveform
@@ -61,8 +64,7 @@ let () =
   let open Bits in
   let sim, waves, inputs, outputs = create_sim () in
 
-  Out_channel.with_file "waves_top.vcd" ~f:(fun oc ->
-  let sim = Vcd.wrap oc sim in
+  let run sim =
 
   let t_rst_rx = inputs.rx_reset in
   let t_rst_tx = inputs.tx_reset in
@@ -119,9 +121,10 @@ let () =
       let l = Bits.to_bool    !(outputs.m_axis_tlast) in
       let u = Bits.to_bool    !(outputs.m_axis_tuser) in
       let f = Bits.to_bool    !(outputs.m_axis_tfirst) in
-      printf "  [%2d] valid=%d data=0x%02x last=%d user=%d first=%d\n"
-        i (if v then 1 else 0) b (if l then 1 else 0) (if u then 1 else 0)
-        (if f then 1 else 0);
+      if waveform_enabled then
+        printf "  [%2d] valid=%d data=0x%02x last=%d user=%d first=%d\n"
+          i (if v then 1 else 0) b (if l then 1 else 0) (if u then 1 else 0)
+          (if f then 1 else 0);
       if v then begin
         if f then tfirst_at := !tfirst_at @ [ List.length !bytes_out ];
         bytes_out := !bytes_out @ [b];
@@ -190,5 +193,9 @@ let () =
   let all_ok = t1_ok && t2_ok && t3_ok in
   printf "\n==== SUMMARY: %s ====\n" (if all_ok then "ALL PASS" else "FAILURES");
   print_endline "\n=== SIMULATION COMPLETE ===";
-  (* Waveform.print ~display_width:96 waves; *)
-  if not all_ok then exit 1)
+  if waveform_enabled then Waveform.print ~display_width:96 waves;
+  if not all_ok then exit 1
+  in
+  if waveform_enabled
+  then Out_channel.with_file "waves_top.vcd" ~f:(fun oc -> run (Vcd.wrap oc sim))
+  else run sim

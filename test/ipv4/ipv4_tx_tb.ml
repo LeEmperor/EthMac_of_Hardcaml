@@ -182,7 +182,15 @@ let () =
 
       incr guard
     done;
-    if !guard >= 500 then printf "WARNING: never saw completion within guard — likely FSM stall\n";
+    if not !saw_last then
+      failwithf
+        "IPv4 TX timed out after %d cycles: l4_len=%d protocol=%d stall_every=%d accepted=%d"
+        !guard
+        n
+        protocol
+        stall_every
+        !ptr
+        ();
     (!collected, !tlast_idx, !tx_starts)
   in
 

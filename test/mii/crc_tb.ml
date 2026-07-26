@@ -4,6 +4,9 @@ open! Mii_of_hardcaml
 open! Hardcaml_waveterm
 open! Helper_tb_functions
 
+let waveform_enabled =
+  Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform")
+
 let () =
   print_endline "=== Running MAC CRC Testbench ==="
 
@@ -39,8 +42,16 @@ let () =
   let open Bits in
   let sim, waves, inputs, outputs = create_sim () in
 
-  Out_channel.with_file "waves_crc.vcd" ~f:(fun oc ->
-  let sim = Vcd.wrap oc sim in
+  let run sim =
+  let checks = ref 0 in
+  let failures = ref 0 in
+  let check_hex ~case ~expected ~observed =
+    Int.incr checks;
+    if expected <> observed then begin
+      Int.incr failures;
+      eprintf "%s: expected 0x%08x, observed 0x%08x\n" case expected observed
+    end
+  in
 
   let t_rst   = inputs.reset in
   let t_en    = inputs.en in
@@ -49,11 +60,12 @@ let () =
 
   let cycle () =
     Cyclesim.cycle sim;
-    printf "  data=0x%02x valid=%d  hw_crc=0x%08x  crc_valid=%d\n"
-      (Bits.to_int_trunc !(t_data))
-      (Bits.to_int_trunc !(t_valid))
-      (Bits.to_int_trunc !(outputs.crc_out))
-      (Bits.to_int_trunc !(outputs.crc_valid))
+    if waveform_enabled then
+      printf "  data=0x%02x valid=%d  hw_crc=0x%08x  crc_valid=%d\n"
+        (Bits.to_int_trunc !(t_data))
+        (Bits.to_int_trunc !(t_valid))
+        (Bits.to_int_trunc !(outputs.crc_out))
+        (Bits.to_int_trunc !(outputs.crc_valid))
   in
 
   let reset () =
@@ -87,6 +99,7 @@ let () =
   let sw_result  = sw_crc (data_bytes @ fcs_bytes) in
   printf "\n-- [test 1] standard CRC-32 test vector (123456789) --\n";
   printf "  sw reference CRC after data+FCS = 0x%08x  (expect 0xdebb20e3)\n" sw_result;
+  check_hex ~case:"software standard residue" ~expected:0xDEBB20E3 ~observed:sw_result;
   reset ();
 
   (* List.iter is pretty cool, almost like that one Rust function that does a function on each thing in an iterable *)
@@ -94,7 +107,10 @@ let () =
   List.iter fcs_bytes  ~f:feed_byte;
 
   t_valid <-- 0;
-  printf "  --> hw crc_valid = %d  (expect 1)\n" (Bits.to_int_trunc !(outputs.crc_valid));
+  let hw_residue = Bits.to_int_trunc !(outputs.crc_out) in
+  let hw_valid = Bits.to_int_trunc !(outputs.crc_valid) in
+  check_hex ~case:"hardware standard residue" ~expected:0xDEBB20E3 ~observed:hw_residue;
+  check_hex ~case:"standard FCS crc_valid" ~expected:1 ~observed:hw_valid;
 
   (* -- test 2: wrong FCS should not assert crc_valid -- *)
   printf "\n-- [test 2] wrong FCS (all zeros) --\n";
@@ -104,7 +120,10 @@ let () =
   List.iter [0x00;0x00;0x00;0x00] ~f:feed_byte;
 
   t_valid <-- 0;
-  printf "  --> hw crc_valid = %d  (expect 0)\n" (Bits.to_int_trunc !(outputs.crc_valid));
+  check_hex
+    ~case:"wrong FCS rejection"
+    ~expected:0
+    ~observed:(Bits.to_int_trunc !(outputs.crc_valid));
 
   (* -- test 3: en drop mid-frame resets accumulator --           *)
   printf "\n-- [test 3] mid-frame reset via en drop, then full sequence --\n";
@@ -118,9 +137,20 @@ let () =
   List.iter fcs_bytes  ~f:feed_byte;
 
   t_valid <-- 0;
-  printf "  --> hw crc_valid = %d  (expect 1)\n" (Bits.to_int_trunc !(outputs.crc_valid));
+  check_hex
+    ~case:"reset recovery residue"
+    ~expected:0xDEBB20E3
+    ~observed:(Bits.to_int_trunc !(outputs.crc_out));
+  check_hex
+    ~case:"reset recovery crc_valid"
+    ~expected:1
+    ~observed:(Bits.to_int_trunc !(outputs.crc_valid));
 
-  print_endline "\n=== SIMULATION COMPLETE ===";
-  Waveform.print ~display_width:96 waves;
-  )
+  printf "\n==== SUMMARY: %d checks, %d failures ====\n" !checks !failures;
+  if waveform_enabled then Waveform.print ~display_width:96 waves;
+  if !failures <> 0 then exit 1
+  in
+  if waveform_enabled
+  then Out_channel.with_file "waves_crc.vcd" ~f:(fun oc -> run (Vcd.wrap oc sim))
+  else run sim
 ;;
