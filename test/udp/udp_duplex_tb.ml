@@ -22,6 +22,7 @@ open! Core
 open! Hardcaml
 open! Udp_of_hardcaml
 open! Helper_tb_functions
+open! Alcotest
 
 let () = print_endline "=== Running UDP Duplex (full-duplex) Integration Testbench ==="
 
@@ -325,3 +326,6 @@ let () =
   print_endline "\n=== SIMULATION COMPLETE ===";
   if not !all_ok then exit 1
 ;;
+
+(**)
+

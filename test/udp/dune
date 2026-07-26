@@ -4,10 +4,12 @@
  (libraries
   core
   hardcaml
+  mii_of_hardcaml
   udp_of_hardcaml
   ipv4_of_hardcaml
   hardcaml_waveterm
-  helper_tb_functions)
+  helper_tb_functions
+  alcotest)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
  (flags
