@@ -167,5 +167,156 @@ Therefore, ```[%test_result: int list] actual_bytes ~expect:expected_bytes``` is
 4. ```[%sexp (value: Some_type.t)]``` expression extension generating an S-expression.
 
 5. ```type t = {value : int} [@@deriving sexp, equal]``` an attribute attached to a type declaration, generating functions such as sexp_of_t and eqaul.
-
+ta
 ```%``` constructs compile-time requests to generate ordinary OCaml code. They are not special runtime objects by any means.
+
+# Writing a Testbench with Hardcaml_step_testbench
+
+Write out your standard simulator back-end instantiations, as well as your DUT.
+
+```
+module Dut = Mii_of_hardcaml.Rx_byte_assembler
+module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
+```
+
+Add in your step testbench instantiation.
+
+```
+module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
+```
+
+Write your test scenario (think of this like a "UVM-test", aka a "base_test", or a "random_test", or a "should_be_fine_test" etc. Like a UVM-test object, this relies on a certain "executor" of it's contents. In UVM this is commonly the "agent", which delegates between the driver/monitor - sometimes both. In Hardcaml, the "executor" shall be referred to as the "handler".
+
+```
+let scenario handler _initial_outputs : Bits.t Dut.O.t list = 
+    (* Reset *)
+    Step.delay (* Apply the reset, we don't care about outputs here *)
+        handler
+        {   Step.input_hold with
+
+            reset = Bits.vdd
+            ; en = Bit.gnd
+            ; rx_data = Bit.zero 4
+        };
+
+    (* composable for applying some data, and then saving the results *)
+    let after_low = 
+        Step.cycle
+            handler
+            { Step.input_hold with
+                reset = Bits.gnd
+                ; en = Bits.vdd
+                ; rx_data = Bits.of_int_trunc ~width:4 0xB
+            }
+    in
+
+    let after_high =
+        Step.cycle
+            handler
+            { Step.input_hold with
+                reset = Bits.gnd
+                ; en = Bits.vdd
+                ; rx_data = Bits.of_int_trunc ~width:4 0xA
+            }
+    in
+
+    (* the cycle result after presenting the low nibble *)
+    (* apply items, step, and store outputs *)
+    let low_nibble_step = Step.O_data.after_edge after_low in
+
+    (* the cycle result after presenting the high nibble *)
+    (* apply items, step, and store outputs *)
+    let high_nibble_step = Step.O_data.after_edge after_high in
+
+    (* both low_nibble_step and high_nibble_step contain {before_edge...; after_edge...} entires
+        we happen to only care about the data out of the DUT *after* the edge, which is why we are extracting the after_edge component of the O_data.t item from after_low
+    *)
+
+    (* pack them together *)
+    [ low_outputs; high_outputs ]
+    ;;
+```
+
+This may seem like alot, and it really is. Below sectinos break down individual components of the scenario.
+
+### Cyclesim Runner
+Similar to the idea of a "run" task in a UVM component, we have a function we must declare that the test can actually clal to kick off the simulation backend.
+This is a single-call function that "kicks off" the scenario. 
+
+```
+let run_cyclesim() = 
+    let scope =
+        Scope.create
+            ~flatten_design:true
+            ~auto_label_hierarchical_ports:true
+            ()
+    in
+    let simulator = Sim.create (Dut.create scope) in
+    Step.run_with_timeout
+        ~timeout:16
+        ()
+        ~simulator
+        ~testbench:scenario
+;;
+```
+
+### Expect Test Itself
+```
+let%expect_test "assembles 0xAB" = 
+    let result = run_cyclesim () in
+    print_s
+        [%sexp
+        (result : Bits.t Dut.O.t list option)];
+        
+        [%expect
+        {|
+        (((byte_out 11) (byte_valid 0))
+            ((byte_out 171) (byte_valid 1)))
+        |}]
+    ;;
+
+```
+
+# Step Library Manual
+The ```step_testbench``` library usage compounds of (3) main things:
+    1. apply a record of inputs (aka a set of signals across the inputs)
+    2. advance the simulation n cycles
+    3. gather the outputs as another record
+
+#### ```Step.delay : ?num_cycles:int -> Step.Handler.t -> Bits.t Dut.I.t -> unit```:
+
+```
+Step.delay
+    handler
+    { Step.input_hold with
+        reset = Bits.vdd
+        ; en = Bits.gnd
+        ; rx_data = Bits.zero 4
+    }
+````
+"Apply these input assignments, advance the simulation by one cycle, and *discard* the output snapshot." Returns a unit, thus "discard" the outputs. Think of how ```ignore``` works to draw a paradigm between ```delay``` and ```cycle```.
+
+#### ```Step.cycle```
+Applies a record of inputs, advances the simulatoin N cycles, and returns an output record of ```Step.O_data.t```. Importantly, we do not ```ignore``` or ```discard``` the outputs.
+More keenly, apply inputs, evaluate combinational logic before edge, update registers/memories at edge, evaluate combinational logic after edge, and return ```{before_edge ... ; after_edge...} ```.
+
+Contains (2) complete output records:
+```type O_data.t = 
+    {
+        before_edge : Bits.t Dut.O.t
+        ; after_edge : Bits.t Dut.O.t
+    }
+```
+
+Example: ```let outputs = Step.cycle handler inputs``` returns ```Step.O_data.t```. Now can can use the outputs associated with the cycle.
+
+#### ```Step.input_hold```
+A type, as indicated in the signature ```val input_hold : Hardcaml.Bits.t I.t```, but often applied as ```Bits.t Dut.I.t```.
+Every field contains ```Bits.empty```, which ```Step``` interprets as "this task is not assigning the field, retain the previous value."
+
+Essentially, we use this in combination with record-update syntax to *override* the value of stuff from an existing record. Here we have all other fields that ```Step.delay``` is taking in on the input record hold, while specifically ```reset```, ```en```, and ```rx_data``` are driven to specific values. ```clock``` is the main thing that we are not choosing to make any changes to, and are thus having the simulator "hold" at the previous value.
+
+```Step.run_until_finished```: 
+```Step.run_with_timeout```: 
+
+# Typed Test vs Expect Test

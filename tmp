@@ -1,0 +1,15 @@
+  let drive_byte handler byte = 
+    let lo, hi = Byte_transaction.to_nibbles byte in
+    let after_lo_nibble = drive_nibble handler lo in
+    let after_hi_nibble = drive_nibble handler hi in
+    (* (drive_nibble handler lo, drive_nibble handler hi) *)
+      (* execution order in tuples is NOT guaranteed; can we make it guaranteed? *)
+    (after_lo_nibble, after_hi_nibble)
+  ;;
+
+  ...
+
+  let drive_and_observe_byte handler byte =
+    let after_low_nibble, after_high_nibble = drive_byte handler byte
+    ...
+  ;;

@@ -1,3 +1,12 @@
+(*
+  Jane Street Capital
+  Author: Bohdan Purtell
+
+  Test: "rx_byte_assembler_tb"
+
+  Deprecated test. See test_rx_byte_assembler.
+*)
+
 open! Core
 open! Hardcaml
 open! Mii_of_hardcaml
