@@ -19,6 +19,7 @@ let () = Stdio.print_endline "=== Imported Test: test_rx_byte_assembler ===";;
 module Dut = Rx_byte_assembler
 
 (* An "item" as UVM might treat one. Back-end agnostic TLM-item that emitted *)
+(* An observation can be composed over a series of cycles *)
 module Observation = struct
   type t = 
     { valid_after_low_nibble : bool (* should be false *)
@@ -131,6 +132,7 @@ module Testbench = struct
       (inputs ~reset:true ~en:false ~rx_data:0)
   ;;
 
+  (* this is basically a UVM monitor *)
   let observe_byte ~after_low_nibble ~after_high_nibble  = 
     let valid_after_low_nibble = 
       Bits.to_bool after_low_nibble.Dut.O.byte_valid
@@ -149,6 +151,7 @@ module Testbench = struct
     }
   ;;
 
+  (* this is basically a UVM agent *)
   let drive_and_observe_byte (handler : Step.Handler.t @ local) byte =
     let after_low_nibble, after_high_nibble = drive_byte handler byte in
     observe_byte ~after_low_nibble ~after_high_nibble 

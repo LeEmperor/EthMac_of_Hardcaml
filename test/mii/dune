@@ -10,7 +10,7 @@
    tx_path_tb
    )
  (modules
-   (:standard \ test_rx_byte_assembler)
+   (:standard \ test_rx_byte_assembler test_tx_byte_disassembler)
   )
  (libraries 
    core 
@@ -26,7 +26,7 @@
 
 (library
  (name mii_inline_tests)
- (modules test_rx_byte_assembler)
+ (modules test_rx_byte_assembler test_tx_byte_disassembler)
  (inline_tests)
  (libraries
   core
