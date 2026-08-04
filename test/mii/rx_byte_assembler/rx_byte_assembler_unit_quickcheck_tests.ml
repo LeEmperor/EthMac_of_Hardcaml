@@ -4,23 +4,29 @@
 
   Unit and Quickcheck Test Suite: Rx_byte_assembler
 
-  Typed example assertions and generated properties covering byte assembly for
-  individual values, back-to-back traffic, and randomized byte sequences.
+  Typed example assertions and generated properties covering byte assembly for individual values, back-to-back traffic, and randomized byte sequences.
+
+  Tags: { "ACTIVE"
+          ; "TEST"
+          ; "QUICKCHECk"
+          ; "UNIT"
+          ; "UNIT_TEST"
+          ; "UNITTEST"
+          ; "PERSONAL_REFERENCE"
+        }
 *)
 
 open! Core
 open! Rx_byte_assembler_testbench
 
-let expected_observation byte : Observation.t =
-  { valid_after_low_nibble = false
-  ; valid_after_high_nibble = true
-  ; completed_byte = Some byte
-  }
-;;
 
+(* fascinating composition*)
 module Generators = struct
-  let byte : int Quickcheck.Generator.t = Int.gen_incl 0x00 0xFF
+  (* random variable byte B *)
+  let byte : int Quickcheck.Generator.t = (* ability to discern types here has been finicky sometimes; maybe need to re-build ocamllsp or something tbh *)
+    Int.gen_incl 0x00 0xFF
 
+    (* need to import the weighted random sequence thing in eventually - would probablybe a fun exercise to write one my own for some Caltrain ride *)
   let byte_sequence : int list Quickcheck.Generator.t =
     let open Quickcheck.Generator.Let_syntax in
     let%bind length = Int.gen_incl 1 16 in
@@ -28,6 +34,15 @@ module Generators = struct
   ;;
 end
 
+(* henchmen (helper) 1*)
+let expected_observation byte : Observation.t =
+  { valid_after_low_nibble = false
+  ; valid_after_high_nibble = true
+  ; completed_byte = Some byte
+  }
+;;
+
+(* goon #2 *)
 let check_bytes bytes =
   let actual = Testbench.run_bytes bytes in
   let expect = List.map bytes ~f:expected_observation in

@@ -6,6 +6,12 @@
 
   Deprecated standalone simulation and manual assertion harness. The unit,
   Quickcheck, and expect test suites supersede this test.
+
+  Don't use anything here lmao; eventually will have dunetest de-active this modules usage, but I think some of the integration suites use it elsewhere.
+
+  Tags: { "DEPRECATED"
+          ; "ASSERTION_TEST"
+        }
 *)
 
 open! Core
