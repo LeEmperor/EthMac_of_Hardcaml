@@ -1,10 +1,11 @@
 (*
-  Jane Street Capital
+  University of Florida
   Author: Bohdan Purtell
 
-  Test: "rx_byte_assembler_tb"
+  Legacy Assertion Test: Rx_byte_assembler
 
-  Deprecated test. See test_rx_byte_assembler.
+  Deprecated standalone simulation and manual assertion harness. The unit,
+  Quickcheck, and expect test suites supersede this test.
 *)
 
 open! Core

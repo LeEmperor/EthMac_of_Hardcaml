@@ -1,4 +1,12 @@
-(* Assertion-based examples and property tests. *)
+(*
+  University of Florida
+  Author: Bohdan Purtell
+
+  Unit and Quickcheck Test Suite: Rx_byte_assembler
+
+  Typed example assertions and generated properties covering byte assembly for
+  individual values, back-to-back traffic, and randomized byte sequences.
+*)
 
 open! Core
 open! Rx_byte_assembler_testbench

@@ -2,12 +2,11 @@
   University of Florida
   Author: Bohdan Purtell
 
-  Expect Test Suite: ""
+  Expect Test Suite: Rx_byte_assembler
 
-
+  Golden-output tests presenting cycle-by-cycle behavior as readable traces,
+  including disabled cycles and reset during a partially assembled byte.
 *)
-
-(* Golden-output tests for cycle-by-cycle behavior that is useful to read as a trace. *)
 
 open! Core
 open! Rx_byte_assembler_testbench

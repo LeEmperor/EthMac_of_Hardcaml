@@ -2,9 +2,10 @@
   University of Florida
   Author: Bohdan Purtell
 
-  Testbench: "Rx_byte_assembler_testbench"
+  Testbench Support: Rx_byte_assembler
 
-  Shared DUT fixture and simulation scenarios for both the assertion and expect tests.
+  Shared DUT fixture, drivers, observations, and simulation scenarios used by
+  the unit, Quickcheck, and expect test suites.
 *)
 
 open! Core

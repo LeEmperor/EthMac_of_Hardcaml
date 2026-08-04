@@ -1,6 +1,6 @@
 (test
- (name rx_byte_assembler_tb)
- (modules rx_byte_assembler_tb)
+ (name rx_byte_assembler_legacy_assertion_test)
+ (modules rx_byte_assembler_legacy_assertion_test)
  (libraries core hardcaml mii_of_hardcaml)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
@@ -11,8 +11,8 @@
  (name rx_byte_assembler_inline_tests)
  (modules
   rx_byte_assembler_testbench
-  test_rx_byte_assembler
-  test_rx_byte_assembler_expect)
+  rx_byte_assembler_unit_quickcheck_tests
+  rx_byte_assembler_expect_tests)
  (inline_tests)
  (libraries
   core
