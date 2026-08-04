@@ -10,7 +10,11 @@
    tx_path_tb
    )
  (modules
-   (:standard \ test_rx_byte_assembler test_tx_byte_disassembler)
+   (:standard
+    \ rx_byte_assembler_testbench
+    test_rx_byte_assembler
+    test_rx_byte_assembler_expect
+    test_tx_byte_disassembler)
   )
  (libraries 
    core 
@@ -26,7 +30,11 @@
 
 (library
  (name mii_inline_tests)
- (modules test_rx_byte_assembler test_tx_byte_disassembler)
+ (modules
+  rx_byte_assembler_testbench
+  test_rx_byte_assembler
+  test_rx_byte_assembler_expect
+  test_tx_byte_disassembler)
  (inline_tests)
  (libraries
   core
@@ -39,4 +47,3 @@
   (pps ppx_hardcaml ppx_jane))
  (flags
   (:standard -w -27-57-33-34-35-40-63-47-26)))
-
