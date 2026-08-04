@@ -1,0 +1,27 @@
+(test
+ (name rx_byte_assembler_tb)
+ (modules rx_byte_assembler_tb)
+ (libraries core hardcaml mii_of_hardcaml)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
+
+(library
+ (name rx_byte_assembler_inline_tests)
+ (modules
+  rx_byte_assembler_testbench
+  test_rx_byte_assembler
+  test_rx_byte_assembler_expect)
+ (inline_tests)
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
