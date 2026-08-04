@@ -1,5 +1,4 @@
 (*
-  Jane Street
   Author: Bohdan Purtell
 
   Testbench: "rx_controller_tb.ml"

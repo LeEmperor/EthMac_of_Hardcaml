@@ -1,5 +1,4 @@
 (*
-  Jane Street
   Author: Bohdan Purtell
 
   Executable: "rx_path_tb.ml"
