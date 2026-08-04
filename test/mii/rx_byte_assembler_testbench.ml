@@ -1,4 +1,11 @@
-(* Shared DUT fixture and simulation scenarios for both assertion and expect tests. *)
+(*
+  University of Florida
+  Author: Bohdan Purtell
+
+  Testbench: "Rx_byte_assembler_testbench"
+
+  Shared DUT fixture and simulation scenarios for both the assertion and expect tests.
+*)
 
 open! Core
 open! Hardcaml
