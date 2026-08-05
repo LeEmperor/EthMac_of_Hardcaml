@@ -40,6 +40,24 @@ module Observation = struct
   [@@deriving sexp, equal, compare]
 end
 
+module Reset_while_busy_observation = struct
+  type t =
+    { low_before_reset : Output_snapshot.t
+    ; after_reset : Output_snapshot.t
+    ; following_byte : Observation.t
+    }
+  [@@deriving sexp, equal, compare]
+end
+
+module Busy_valid_observation = struct
+  type t =
+    { accepted_low : Output_snapshot.t
+    ; accepted_high_while_busy : Output_snapshot.t
+    ; after_busy_pulse : Output_snapshot.t
+    }
+  [@@deriving sexp, equal, compare]
+end
+
 module Testbench = struct
   module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
   module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
@@ -144,5 +162,95 @@ module Testbench = struct
 
   let run_bytes bytes =
     run_with_timeout ~timeout:(4 + (2 * List.length bytes)) ~testbench:(scenario ~bytes)
+  ;;
+
+  let run_reset_while_idle () =
+    let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+      Step.cycle
+        handler
+        (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
+      |> Step.O_data.after_edge
+      |> snapshot
+    in
+    run_with_timeout ~timeout:4 ~testbench
+  ;;
+
+  (* this shit has GOT to be more composable on Jah[seh] *)
+  let run_reset_while_busy ~interrupted_byte ~following_byte =
+    let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+
+      (* rst *)
+      reset handler;
+
+      (* lo *)
+      let low_cycle =
+        Step.cycle
+          handler
+          (inputs
+             ~reset:false
+             ~en:true
+             ~byte_in:interrupted_byte
+             ~byte_in_valid:true)
+      in
+
+      (* hi *)
+      let reset_cycle =
+        Step.cycle
+          handler
+          (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
+      in
+      { Reset_while_busy_observation.low_before_reset =
+          snapshot (Step.O_data.before_edge low_cycle)
+      ; after_reset = snapshot (Step.O_data.after_edge reset_cycle)
+      ; following_byte = drive_and_observe_byte handler following_byte
+      }
+    in
+    run_with_timeout ~timeout:8 ~testbench
+  ;;
+
+  (* absolutely diabolique *)
+  let run_valid_pulse_while_busy ~accepted_byte ~offered_while_busy =
+    let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+
+      (* rst *)
+      reset handler;
+
+      (* low portion *)
+      let low_cycle =
+        Step.cycle
+          handler
+          (inputs
+             ~reset:false
+             ~en:true
+             ~byte_in:accepted_byte
+             ~byte_in_valid:true)
+      in
+
+      (* high portion *)
+      (* do you think high and hi fight eachother because one is shorter than the other? *)
+      let busy_cycle =
+        Step.cycle
+          handler
+          (inputs
+             ~reset:false
+             ~en:true
+             ~byte_in:offered_while_busy
+             ~byte_in_valid:true)
+      in
+
+      let after_pulse_cycle =
+        Step.cycle
+          handler
+          (inputs ~reset:false ~en:true ~byte_in:0 ~byte_in_valid:false)
+      in
+
+      { Busy_valid_observation.accepted_low =
+          snapshot (Step.O_data.before_edge low_cycle)
+      ; accepted_high_while_busy = snapshot (Step.O_data.before_edge busy_cycle)
+      ; after_busy_pulse = snapshot (Step.O_data.before_edge after_pulse_cycle)
+      }
+    in
+
+    run_with_timeout ~timeout:7 ~testbench
   ;;
 end
