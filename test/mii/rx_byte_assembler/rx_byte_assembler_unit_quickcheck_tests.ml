@@ -19,7 +19,6 @@
 open! Core
 open! Rx_byte_assembler_testbench
 
-
 (* fascinating composition*)
 module Generators = struct
   (* random variable byte B *)
