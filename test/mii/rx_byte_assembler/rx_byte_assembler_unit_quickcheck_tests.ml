@@ -1,19 +1,20 @@
-(*
-  University of Florida
-  Author: Bohdan Purtell
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-  Unit and Quickcheck Test Suite: Rx_byte_assembler
+(* Unit and Quickcheck Test Suite: Rx_byte_assembler
 
-  Typed example assertions and generated properties covering byte assembly for individual values, back-to-back traffic, and randomized byte sequences.
+   Typed example assertions and generated properties covering byte assembly for
+   individual values, back-to-back traffic, and randomized byte sequences.
 
-  Tags: { "ACTIVE"
-          ; "TEST"
-          ; "QUICKCHECk"
-          ; "UNIT"
-          ; "UNIT_TEST"
-          ; "UNITTEST"
-          ; "PERSONAL_REFERENCE"
-        }
+   Tags:
+   [{ "ACTIVE"
+    ; "TEST"
+    ; "QUICKCHECk"
+    ; "UNIT"
+    ; "UNIT_TEST"
+    ; "UNITTEST"
+    ; "PERSONAL_REFERENCE"
+   }]
 *)
 
 open! Core
