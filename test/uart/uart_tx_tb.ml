@@ -13,7 +13,7 @@ module Sim = Cyclesim.With_interface(Uart_tx.I)(Uart_tx.O)
 let create_sim ()=
   let top_tb_scope : Scope.t = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim = Sim.create ~config:Cyclesim.Config.trace_all (Uart_tx.create top_tb_scope) in
-  let waves, sim              = Waveform.create sim in
+  let waves, sim              = Cyclesim.Waveform.create sim in
   let inputs  : _ Uart_tx.I.t = Cyclesim.inputs sim in
   let outputs : _ Uart_tx.O.t = Cyclesim.outputs sim in
   (sim, waves, inputs, outputs)
@@ -83,5 +83,4 @@ let () =
   )
 
 ;;
-
 
