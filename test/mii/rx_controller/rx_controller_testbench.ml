@@ -16,6 +16,7 @@ let () = Stdio.print_endline ""
 
 module Dut = Rx_controller
 
+(* test edit for magit mode *)
 (* operate on byte-level granularities, and compose from nibbles at a different level *)
 (* should we compose on the before after sampling? or rather whether or not the enables
    were in their correct state relevant to each edge? *)
