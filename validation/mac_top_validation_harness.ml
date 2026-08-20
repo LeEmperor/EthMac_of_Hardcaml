@@ -240,10 +240,10 @@ let create
   in
 
   (* keep debug OR-reductions alive so synthesis doesn't prune the submodules *)
-  ignore heartbeat.keep;
-  ignore rx_drain.keep;
-  ignore mac_inst.keep;
-  ignore regs_inst.keep;
+  ignore (heartbeat.keep : Signal.t);
+  ignore (rx_drain.keep : Signal.t);
+  ignore (mac_inst.keep : Signal.t);
+  ignore (regs_inst.keep : Signal.t);
 
   { O.
     led = Signal.select last_byte ~high:3 ~low:0;

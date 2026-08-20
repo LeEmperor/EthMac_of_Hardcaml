@@ -429,10 +429,10 @@ let create
   (*   m_axis_tvalid = datapath_inst.payload_out_valid; *)
   (*   m_axis_tlast  = Signal.gnd; *)
   (*   m_axis_tkeep  = Signal.gnd; *)
-  (**)
+  (* *)
   (*   keep = Signal.zero 1; *)
   (* } *)
-  (**)
+  (* *)
 
   {
     m_axis_tdata  = rx_rd_word.data;
@@ -454,4 +454,3 @@ let create
     s_axis_tready = ~:(tx_fifo.full);
     keep          = keep;
   }
-

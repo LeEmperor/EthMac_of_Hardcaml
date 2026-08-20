@@ -4,6 +4,8 @@
  (libraries core hardcaml hardcaml_waveterm)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
  (flags (:standard -w -27-57-33-34-35-40-63-47-26))
  )
 
@@ -13,5 +15,7 @@
  (libraries core hardcaml helper_circuits hardcaml_waveterm)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
  (flags (:standard -w -27-57-33-34-35-40-63-47-26))
 )

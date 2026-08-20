@@ -56,8 +56,8 @@ let create
      Without these lines the internal counter would still exist in simulation (it is
      driven by compile above) but would appear with an auto-generated hierarchical name
      rather than the friendly "cnt" / "pulse" label. *)
-  ignore (cnt.value   -- "cnt");
-  ignore (pulse.value -- "pulse");
+  ignore ((cnt.value -- "cnt") : Signal.t);
+  ignore ((pulse.value -- "pulse") : Signal.t);
 
   (* reg_fb commentary
      ─────────────────
@@ -90,4 +90,3 @@ let create
     keep    = pulse.value;
   }
 ;;
-
