@@ -1,7 +1,6 @@
 (*
   Bohdan Purtell
   University of Florida
-  Jane Street Technologies
 
   Module: "udp.ml"
 
@@ -256,4 +255,3 @@ module Make (C : Config) = struct
 
 end
 ;;
-
