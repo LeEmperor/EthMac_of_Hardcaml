@@ -15,5 +15,7 @@
   hardcaml_step_testbench)
  (preprocess
   (pps ppx_hardcaml ppx_jane ppx_expect))
+ (lint
+  (pps ppx_js_style))
  (flags
   (:standard -w -27-57-33-34-35-40-63-47-26)))
