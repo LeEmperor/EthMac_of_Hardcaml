@@ -41,8 +41,10 @@ You will also want the following libraries for [OCaml](https://ocaml.org/)
 6. ```hardcaml_waveterm```
 7. ```alcotest```
 8. ```ocamlformat```
+9. ```ppx_js_style```
+10. ```ocaml-lsp-server``` (for editor integration)
 
-Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml hardcaml_circuits hardcaml_waveterm alcotest ocamlformat``` to install the set of dependencies manually, 
+Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml hardcaml_circuits hardcaml_waveterm alcotest ocamlformat ppx_js_style ocaml-lsp-server``` to install the set of dependencies manually,
 
 ```OR``` let the bootstrap ```--install-deps``` flag handle it for you. You can also opt to install the main OxCaml switch yourself, and then let the dependencies afterwards get handled by ```./bootstrap.sh```.
 
@@ -70,6 +72,33 @@ The project builds entirely with [dune](https://dune.build/). All commands go th
 ./scripts/with-switch.sh dune build      # build everything
 ./scripts/with-switch.sh dune runtest    # run all testbenches
 ./scripts/with-switch.sh dune fmt        # format
+./scripts/with-switch.sh dune build @lint # Jane Street style checks
 ```
 
 Convenience wrappers in `./tools` (e.g. `./tools/dune_tb.sh test/mii/tx_path_tb.exe`, `./tools/open_wave.sh waves/waves_top.vcd`) do the same and can be run directly.
+
+## Emacs
+
+The repository is a Git-backed Emacs project, so `project.el` and Projectile detect it
+without an extra marker file. The checked-in `.dir-locals.el` sets two-space,
+space-only OCaml indentation and configures these project commands:
+
+- configure: `./bootstrap.sh`
+- compile: `./tools/dune_build.sh`
+- test: `./tools/dune_test.sh`
+
+Run `M-x project-compile` (or Projectile's compile/test commands) from any project
+buffer. Eglot users can format the current buffer with `M-x eglot-format-buffer`.
+Start Emacs from a shell in which the project switch is selected when using Merlin or
+Eglot, so `ocamllsp` and `ocamlformat` come from the OxCaml switch:
+
+```sh
+source ./env.sh
+opam exec --switch="$OPAM_SWITCH" -- emacs .
+```
+
+OCamlFormat uses its Jane Street profile from `.ocamlformat`; `dune fmt` is the
+authoritative formatter. `ppx_jane` supplies Jane Street syntax extensions and
+derivers, while `ppx_js_style` is a separate style checker. The latter runs only via
+the Dune `@lint` alias (or `./tools/dune_lint.sh`), rather than changing normal PPX
+expansion during every build.

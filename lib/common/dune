@@ -19,6 +19,9 @@
  (preprocess
   (pps ppx_jane))
 
+ (lint
+  (pps ppx_js_style))
+
  (promote)
 )
 
@@ -31,5 +34,9 @@
 
   (preprocess
     (pps ppx_hardcaml ppx_jane)
+  )
+
+  (lint
+    (pps ppx_js_style)
   )
 )

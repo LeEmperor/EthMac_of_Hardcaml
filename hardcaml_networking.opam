@@ -10,6 +10,9 @@ depends: [
   "hardcaml_circuits"
   "hardcaml_waveterm"
   "alcotest"
+  "ppx_js_style" {with-dev-setup}
+  "ocamlformat" {with-dev-setup}
+  "ocaml-lsp-server" {with-dev-setup}
   "odoc" {with-doc}
 ]
 build: [

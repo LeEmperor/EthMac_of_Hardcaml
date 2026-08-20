@@ -16,4 +16,7 @@
   ppx_hardcaml
   hardcaml_circuits
   hardcaml_waveterm
-  alcotest))
+  alcotest
+  (ppx_js_style :with-dev-setup)
+  (ocamlformat :with-dev-setup)
+  (ocaml-lsp-server :with-dev-setup)))

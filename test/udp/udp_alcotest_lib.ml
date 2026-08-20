@@ -67,44 +67,6 @@ open! Udp_of_hardcaml
 (* end *)
 ;;
 
-(* is there a faster way to make a composure of many lists joined together in repeated actionables? *)
-
-let () = 
-  let dst_port =
-    [
-      0x12
-      ; 0x13
-    ] in
-
-  let src_port = 
-    [
-      0x23
-      ; 0x24
-    ]
-  in
-
-  (* list composability yippee!! *)
-  let thing = dst_port @ src_port in
-  List.iter thing ~f:(fun i -> Stdio.printf "thing: %d" i;) in
-
-
-
-  let test_header () =
-    Alcotest.(check (list int))
-    "premable through ethertype"
-    expected_hdr
-    actual_hdr
-  in
-
-
-
-
-
-
-  Stdio.print_endline "bruh"
-
-
-
 (* standard ocaml list compomsure: 
   a -> (b -> (c -> (d)))) : hehe closure
 
@@ -123,7 +85,6 @@ let () =
 (*   expected_base_eth_frame   (* expected *) *)
 (*   Mac_top.                  (* actual *) *)
 (**)
-
 
 
 

@@ -29,7 +29,9 @@ TEST_PACKAGES=(
 )
 
 DEV_PACKAGES=(
+  ocaml-lsp-server
   ocamlformat
+  ppx_js_style
 )
 
 die() {
