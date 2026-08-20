@@ -1,9 +1,8 @@
-(*
-  University of Florida
-  Author: Bohdan Purtelll
+(* University of Florida *)
+(* Author: Bohdan Purtelll *)
 
-  Legacy assertion tests leftover from the strange testing era.
-  Why doesn't era have two Rs? Cuz it might be an error!
+(* Legacy assertion tests leftover from the strange testing era.
+   Why doesn't era have two Rs? Cuz it might be an error!
 *)
 
 open! Core

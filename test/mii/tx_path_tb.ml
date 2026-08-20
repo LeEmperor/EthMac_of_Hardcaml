@@ -1,30 +1,29 @@
-(*
-  Bohdan Purtell
-  University of Florida
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-  Testbench: TX MAC top-level integration test
+(* Testbench: TX MAC top-level integration test
 
-  Verification strategy (mirror of the RX testbench):
-    RX TB: push MII nibbles from the PHY side → read bytes on AXI-S output
-    TX TB: write bytes into the TX FIFO via AXI-S → read MII nibbles from tx_d/tx_en
-           → reassemble nibbles back into bytes → parse + check frame structure
+   Verification strategy (mirror of the RX testbench):
+     RX TB: push MII nibbles from the PHY side → read bytes on AXI-S output
+     TX TB: write bytes into the TX FIFO via AXI-S → read MII nibbles from tx_d/tx_en
+            → reassemble nibbles back into bytes → parse + check frame structure
 
-  Expected frame layout:
-    [0..6]   preamble:  7 × 0x55
-    [7]      SFD:       0xD5
-    [8..13]  dst_mac:   hardcoded in tx_datapath (broadcast: ff ff ff ff ff ff)
-    [14..19] src_mac:   hardcoded in tx_datapath (locally-admin: 02 00 00 00 00 01)
-    [20..21] eth_type:  hardcoded in tx_datapath (0x9999 custom)
-    [22..67] payload:   46 bytes from FIFO
-    [68..71] FCS:       CRC-32 over [8..67]
+   Expected frame layout:
+     [0..6]   preamble:  7 × 0x55
+     [7]      SFD:       0xD5
+     [8..13]  dst_mac:   hardcoded in tx_datapath (broadcast: ff ff ff ff ff ff)
+     [14..19] src_mac:   hardcoded in tx_datapath (locally-admin: 02 00 00 00 00 01)
+     [20..21] eth_type:  hardcoded in tx_datapath (0x9999 custom)
+     [22..67] payload:   46 bytes from FIFO
+     [68..71] FCS:       CRC-32 over [8..67]
 
-  NOTE: the payload length is now data-driven — the Payload state ends on
-  s_axis_tlast (asserted with the final payload byte), not a fixed count. The
-  standard 46-byte minimum Ethernet payload (min frame = 14 header + 46 payload
-  + 4 FCS = 64 bytes on the wire, excluding preamble/SFD) is still enforced:
-  tx_controller zero-pads a sub-minimum datagram up to 46 bytes before FCS. This
-  test drives exactly 46 payload bytes, so no padding is exercised (that path is
-  covered separately); it does exercise the tlast-terminated Payload state.
+   NOTE: the payload length is now data-driven — the Payload state ends on s_axis_tlast
+   (asserted with the final payload byte), not a fixed count. The standard 46-byte
+   minimum Ethernet payload (min frame = 14 header + 46 payload + 4 FCS = 64 bytes on
+   the wire, excluding preamble/SFD) is still enforced: tx_controller zero-pads a
+   sub-minimum datagram up to 46 bytes before FCS. This test drives exactly 46 payload
+   bytes, so no padding is exercised (that path is covered separately); it does exercise
+   the tlast-terminated Payload state.
 *)
 
 open! Core
@@ -43,7 +42,7 @@ module Sim = Cyclesim.With_interface(Mac_top.I)(Mac_top.O)
 let create_sim () =
   let scope = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim   = Sim.create ~config:Cyclesim.Config.trace_all (Mac_top.create ~rx_fifo_for_sim:true scope) in
-  let waves, sim = Waveform.create sim in
+  let waves, sim = Cyclesim.Waveform.create sim in
   let inputs  : _ Mac_top.I.t = Cyclesim.inputs  sim in
   let outputs : _ Mac_top.O.t = Cyclesim.outputs sim in
   (sim, waves, inputs, outputs)

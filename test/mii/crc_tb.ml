@@ -16,7 +16,7 @@ module Sim = Cyclesim.With_interface(Rx_crc.I)(Rx_crc.O)
 let create_sim () =
   let scope  = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim    = Sim.create ~config:Cyclesim.Config.trace_all (Rx_crc.create scope) in
-  let waves, sim = Waveform.create sim in
+  let waves, sim = Cyclesim.Waveform.create sim in
   let inputs  : _ Rx_crc.I.t = Cyclesim.inputs sim in
   let outputs : _ Rx_crc.O.t = Cyclesim.outputs sim in
   (sim, waves, inputs, outputs)

@@ -1,8 +1,7 @@
-(* 
-   University of Florida 
-   Author: Bohdan Purtell
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-   Unit and Quickcheck Test Suite: Tx_byte_disassembler
+(* Unit and Quickcheck Test Suite: Tx_byte_disassembler
 
    Typed examples and generated properties covering low-nibble-first byte disassembly,
    back-to-back traffic, and return to idle.

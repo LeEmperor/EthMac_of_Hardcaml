@@ -1,10 +1,9 @@
-(*
-  Jane Street Capital
-  Author: Bohdan Purtell
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-  Test: "test_rx_controller"
+(* Test: "test_rx_controller"
 
-  Unit tests for the rx-side controller.
+   Unit tests for the rx-side controller.
 *)
 
 open! Core
@@ -86,4 +85,3 @@ module Generators = struct
     List.gen_with_length length byte
   ;;
 end
-

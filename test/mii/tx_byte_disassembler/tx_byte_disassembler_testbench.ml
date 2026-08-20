@@ -1,8 +1,7 @@
-(* 
-   University of Florida 
-   Author: Bohdan Purtell
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-   Testbench Support: "Tx_byte_disassembler"
+(* Testbench Support: "Tx_byte_disassembler"
 
    Reusable testbench components for tx byte disassembler module.
 *)

@@ -1,8 +1,7 @@
-(* 
-   University of Florida 
-   Author: Bohdan Purtell
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
 
-   Expect Test Suite: Tx_byte_disassembler
+(* Expect Test Suite: Tx_byte_disassembler
 
    Readable transaction traces showing the two active output beats and the idle state
    after the high nibble.
