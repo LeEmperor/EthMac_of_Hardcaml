@@ -1,0 +1,23 @@
+; University of Florida
+; Author: Bohdan Purtell
+;
+; Dune specs for the rx controller verif suite
+
+(library
+ (name rx_controller_inline_tests)
+ (modules
+  rx_controller_testbench
+  rx_controller_unit_quickcheck_tests
+  rx_controller_expect_tests)
+ (inline_tests)
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
