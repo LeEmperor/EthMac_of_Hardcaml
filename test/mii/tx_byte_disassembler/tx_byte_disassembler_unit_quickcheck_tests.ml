@@ -10,11 +10,11 @@
 open! Core
 open! Tx_byte_disassembler_testbench
 
-(* port to a central thing eventually! port to starboard lmao -> i should call it starboard because everything gets ported into it; by the MVT theres some defined area where we go from not starboard to starboard *)
+(* port to a central thing eventually! port to starboard lmao -> i should call it
+   starboard because everything gets ported into it; by the MVT theres some defined area
+   where we go from not starboard to starboard *)
 module Generators = struct
-  let byte : int Quickcheck.Generator.t = 
-    Int.gen_incl 0x00 0xFF
-  ;;
+  let byte : int Quickcheck.Generator.t = Int.gen_incl 0x00 0xFF
 
   let byte_sequence : int list Quickcheck.Generator.t =
     let open Quickcheck.Generator.Let_syntax in
@@ -25,18 +25,15 @@ end
 
 (* I wonder if there's a way to generate expected_observation functions? *)
 let expected_observation byte : Observation.t =
-  let (lo, hi) = Testbench.Byte_transaction.to_nibbles byte in
-
+  let lo, hi = Testbench.Byte_transaction.to_nibbles byte in
   { ready_during_lo = true
   ; ready_during_hi = false
   ; tx_en_during_lo = true
   ; tx_en_during_hi = true
   ; lo_nibble = Some lo
   ; hi_nibble = Some hi
-  ; after_hi  = {  ready = true (* holy ugly nested records Batman *)
-                ; tx_en = false
-                ; tx_d = 0 
-               }
+  ; after_hi =
+      { ready = true (* holy ugly nested records Batman *); tx_en = false; tx_d = 0 }
   }
 ;;
 
@@ -47,7 +44,6 @@ let check_bytes bytes =
 ;;
 
 let idle_snapshot : Output_snapshot.t = { ready = true; tx_en = false; tx_d = 0 }
-
 let%test_unit "disassembles 0x00" = check_bytes [ 0x00 ]
 let%test_unit "disassembles 0x0f" = check_bytes [ 0x0F ]
 let%test_unit "disassembles 0xf0" = check_bytes [ 0xF0 ]
@@ -59,7 +55,9 @@ let%test_unit "disassembles back-to-back bytes" =
 ;;
 
 let%test_unit "reset while idle produces the idle outputs" =
-  [%test_result: Output_snapshot.t] (Testbench.run_reset_while_idle ()) ~expect:idle_snapshot
+  [%test_result: Output_snapshot.t]
+    (Testbench.run_reset_while_idle ())
+    ~expect:idle_snapshot
 ;;
 
 let%test_unit "reset while busy discards the interrupted byte" =
@@ -77,9 +75,7 @@ let%test_unit "reset while busy discards the interrupted byte" =
 
 let%test_unit "a one-cycle valid pulse while busy is not accepted" =
   let actual =
-    Testbench.run_valid_pulse_while_busy
-      ~accepted_byte:0xAB
-      ~offered_while_busy:0x4D
+    Testbench.run_valid_pulse_while_busy ~accepted_byte:0xAB ~offered_while_busy:0x4D
   in
   let expect : Busy_valid_observation.t =
     { accepted_low = { ready = true; tx_en = true; tx_d = 0xB }

@@ -9,7 +9,7 @@ Vocabulary:
 # Test Scenario - Agnostic, Backend-neutral
 Does JS call these "test scenarios" or can I refer to them as tests as UVM does?
 
-# Driver 
+# Driver
 Needs (2) interfaces, will drive things into the Cyclesim model AND the Eventsim model
 
 Perhaps some other entity of some sort that sends things out to the driver?
@@ -81,7 +81,7 @@ Explicit before-edge/after-edge  obvservations (like clocking_block)
   ───────────────────  ─────────────────────────────────────────────────────────────
    Objection/timeout    wait_for and explicit timeout
 
-# 
+#
   - Portable equivalence tests: same design and scenarios on both simulators.
   - EventSim capability tests: real async FIFO, multiple clocks, async reset.
   - CycleSim approximation tests: the synchronous simulation-only replacement.
@@ -121,7 +121,7 @@ Behind the scenes, this is transformed into something like:
 ```
 register_expect test
     ~name:"bytes_assembled"
-    (fun () -> 
+    (fun () ->
         (* original test body *)
     )
 ```
@@ -145,7 +145,7 @@ Example ```completed_bytes = [171; 18]``` produces ```(171 18)```.
 This sexp can then be fed into something like print_s via ```print_s [%sexp (completed_bytes : int list)]```.
 
 
-How can the following line exist: 
+How can the following line exist:
 ```[%test_result: int list] actual_bytes expected_bytes```
 
 The left side of a function application in OCaml can be any expression, not only a function name.
@@ -188,7 +188,7 @@ module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
 Write your test scenario (think of this like a "UVM-test", aka a "base_test", or a "random_test", or a "should_be_fine_test" etc. Like a UVM-test object, this relies on a certain "executor" of it's contents. In UVM this is commonly the "agent", which delegates between the driver/monitor - sometimes both. In Hardcaml, the "executor" shall be referred to as the "handler".
 
 ```
-let scenario handler _initial_outputs : Bits.t Dut.O.t list = 
+let scenario handler _initial_outputs : Bits.t Dut.O.t list =
     (* Reset *)
     Step.delay (* Apply the reset, we don't care about outputs here *)
         handler
@@ -200,7 +200,7 @@ let scenario handler _initial_outputs : Bits.t Dut.O.t list =
         };
 
     (* composable for applying some data, and then saving the results *)
-    let after_low = 
+    let after_low =
         Step.cycle
             handler
             { Step.input_hold with
@@ -241,10 +241,10 @@ This may seem like alot, and it really is. Below sectinos break down individual 
 
 ### Cyclesim Runner
 Similar to the idea of a "run" task in a UVM component, we have a function we must declare that the test can actually clal to kick off the simulation backend.
-This is a single-call function that "kicks off" the scenario. 
+This is a single-call function that "kicks off" the scenario.
 
 ```
-let run_cyclesim() = 
+let run_cyclesim() =
     let scope =
         Scope.create
             ~flatten_design:true
@@ -262,12 +262,12 @@ let run_cyclesim() =
 
 ### Expect Test Itself
 ```
-let%expect_test "assembles 0xAB" = 
+let%expect_test "assembles 0xAB" =
     let result = run_cyclesim () in
     print_s
         [%sexp
         (result : Bits.t Dut.O.t list option)];
-        
+
         [%expect
         {|
         (((byte_out 11) (byte_valid 0))
@@ -301,7 +301,7 @@ Applies a record of inputs, advances the simulatoin N cycles, and returns an out
 More keenly, apply inputs, evaluate combinational logic before edge, update registers/memories at edge, evaluate combinational logic after edge, and return ```{before_edge ... ; after_edge...} ```.
 
 Contains (2) complete output records:
-```type O_data.t = 
+```type O_data.t =
     {
         before_edge : Bits.t Dut.O.t
         ; after_edge : Bits.t Dut.O.t
@@ -316,7 +316,7 @@ Every field contains ```Bits.empty```, which ```Step``` interprets as "this task
 
 Essentially, we use this in combination with record-update syntax to *override* the value of stuff from an existing record. Here we have all other fields that ```Step.delay``` is taking in on the input record hold, while specifically ```reset```, ```en```, and ```rx_data``` are driven to specific values. ```clock``` is the main thing that we are not choosing to make any changes to, and are thus having the simulator "hold" at the previous value.
 
-```Step.run_until_finished```: 
-```Step.run_with_timeout```: 
+```Step.run_until_finished```:
+```Step.run_with_timeout```:
 
 # Typed Test vs Expect Test

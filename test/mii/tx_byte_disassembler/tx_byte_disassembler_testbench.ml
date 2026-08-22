@@ -61,7 +61,8 @@ module Testbench = struct
   module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
   module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
 
-  (* should become a common library highkey - i keep saying that and then pushing it off: #techdebt lmao *)
+  (* should become a common library highkey - i keep saying that and then pushing it off:
+     #techdebt lmao *)
   module Byte_transaction = struct
     type t = int [@@deriving compare, equal, sexp]
 
@@ -91,7 +92,8 @@ module Testbench = struct
       Step.cycle handler (inputs ~reset:false ~en:true ~byte_in:0 ~byte_in_valid:false)
     in
     ( Step.O_data.before_edge lo_cycle
-    , Step.O_data.before_edge hi_cycle (* i think commas with yoda punctuation is a crime against the Lord *)
+    , Step.O_data.before_edge
+        hi_cycle (* i think commas with yoda punctuation is a crime against the Lord *)
     , Step.O_data.after_edge hi_cycle )
   ;;
 
@@ -99,12 +101,7 @@ module Testbench = struct
     Step.delay
       ~num_cycles
       handler
-      (inputs 
-        ~reset:true 
-        ~en:false 
-        ~byte_in:0  
-        ~byte_in_valid:false
-      )
+      (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
   ;;
 
   let snapshot (output : Bits.t Dut.O.t) : Output_snapshot.t =
@@ -165,9 +162,7 @@ module Testbench = struct
 
   let run_reset_while_idle () =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
-      Step.cycle
-        handler
-        (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
+      Step.cycle handler (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
       |> Step.O_data.after_edge
       |> snapshot
     in
@@ -177,26 +172,17 @@ module Testbench = struct
   (* this shit has GOT to be more composable on Jah[seh] *)
   let run_reset_while_busy ~interrupted_byte ~following_byte =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
-
       (* rst *)
       reset handler;
-
       (* lo *)
       let low_cycle =
         Step.cycle
           handler
-          (inputs
-             ~reset:false
-             ~en:true
-             ~byte_in:interrupted_byte
-             ~byte_in_valid:true)
+          (inputs ~reset:false ~en:true ~byte_in:interrupted_byte ~byte_in_valid:true)
       in
-
       (* hi *)
       let reset_cycle =
-        Step.cycle
-          handler
-          (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
+        Step.cycle handler (inputs ~reset:true ~en:false ~byte_in:0 ~byte_in_valid:false)
       in
       { Reset_while_busy_observation.low_before_reset =
           snapshot (Step.O_data.before_edge low_cycle)
@@ -210,46 +196,29 @@ module Testbench = struct
   (* absolutely diabolique *)
   let run_valid_pulse_while_busy ~accepted_byte ~offered_while_busy =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
-
       (* rst *)
       reset handler;
-
       (* low portion *)
       let low_cycle =
         Step.cycle
           handler
-          (inputs
-             ~reset:false
-             ~en:true
-             ~byte_in:accepted_byte
-             ~byte_in_valid:true)
+          (inputs ~reset:false ~en:true ~byte_in:accepted_byte ~byte_in_valid:true)
       in
-
       (* high portion *)
       (* do you think high and hi fight eachother because one is shorter than the other? *)
       let busy_cycle =
         Step.cycle
           handler
-          (inputs
-             ~reset:false
-             ~en:true
-             ~byte_in:offered_while_busy
-             ~byte_in_valid:true)
+          (inputs ~reset:false ~en:true ~byte_in:offered_while_busy ~byte_in_valid:true)
       in
-
       let after_pulse_cycle =
-        Step.cycle
-          handler
-          (inputs ~reset:false ~en:true ~byte_in:0 ~byte_in_valid:false)
+        Step.cycle handler (inputs ~reset:false ~en:true ~byte_in:0 ~byte_in_valid:false)
       in
-
-      { Busy_valid_observation.accepted_low =
-          snapshot (Step.O_data.before_edge low_cycle)
+      { Busy_valid_observation.accepted_low = snapshot (Step.O_data.before_edge low_cycle)
       ; accepted_high_while_busy = snapshot (Step.O_data.before_edge busy_cycle)
       ; after_busy_pulse = snapshot (Step.O_data.before_edge after_pulse_cycle)
       }
     in
-
     run_with_timeout ~timeout:7 ~testbench
   ;;
 end
