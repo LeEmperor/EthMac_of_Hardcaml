@@ -38,8 +38,6 @@ open! Hardcaml
 open! Udp_of_hardcaml   (* Udp_mac_top *)
 open! Signal
 
-let () = Stdio.print_endline "=== Imported UDP+MAC Validation Harness ==="
-
 (* One-shot btn[3] TX trigger:
      Idle    wait for a debounced/edged btn[3] press
      Stream  drive the UDP app interface: hold tx_start until the first byte is

@@ -12,9 +12,6 @@ open! Signal
 open! Helper_circuits
 open! Common_types
 
-let () =
-  Stdio.print_endline "=== Imported MAC TX Datapath ==="
-
 module I = struct
   type 'a t = {
     clock : 'a;

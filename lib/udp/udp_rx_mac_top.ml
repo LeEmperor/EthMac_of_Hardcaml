@@ -47,8 +47,6 @@ open! Signal
 open! Mii_of_hardcaml
 open! Ipv4_of_hardcaml
 
-let () = Stdio.print_endline "=== Imported UDP RX + MAC Top ==="
-
 (* Bring-up RX policy: forward everything, just report status. The expected dst
    port mirrors [Udp_mac_top]'s TX dst_port (0x1235) so a loopback agrees. *)
 module Ip_rx_cfg = struct

@@ -10,9 +10,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported MAC Top ==="
-
 module Rx_word = struct
   type 'a t = {
     data : 'a [@bits 8];

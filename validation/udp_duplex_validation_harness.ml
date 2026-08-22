@@ -33,8 +33,6 @@ open! Hardcaml
 open! Udp_of_hardcaml   (* Udp_duplex_mac_top *)
 open! Signal
 
-let () = Stdio.print_endline "=== Imported UDP Duplex Validation Harness ==="
-
 (* One-shot btn[3] TX trigger — identical to the TX harness:
      Idle    wait for a debounced/edged btn[3] press
      Stream  hold tx_start until the first byte is accepted, then stream

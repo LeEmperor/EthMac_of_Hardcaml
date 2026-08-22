@@ -56,8 +56,6 @@ open! Hardcaml
 open! Signal
 open! Helper_circuits
 
-let () = Stdio.print_endline "=== Imported UDP RX ==="
-
 let udp_hdr_len = 8
 let ip_proto_udp = 17
 

@@ -15,9 +15,6 @@ open! Signal
 open! Always
 open! Variable
 
-let () =
-  Stdio.print_endline "=== Imported MAC TX CRC Module ==="
-
 module I = struct
   type 'a t = {
     clock        : 'a;

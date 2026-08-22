@@ -45,8 +45,6 @@ open! Hardcaml
 open! Signal
 open! Helper_circuits
 
-let () = Stdio.print_endline "=== Imported IPv4 RX ==="
-
 let ip_hdr_len = 20
 let ipv4_ethertype = 0x0800
 

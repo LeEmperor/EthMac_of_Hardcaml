@@ -39,9 +39,6 @@ open! Hardcaml
 open! Mii_of_hardcaml   (* Mac_top lives in the wrapped mii library *)
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported MAC Validation Harness ==="
-
 (* One-shot TX trigger FSM (see the sequencer block in [create]):
      Idle  wait for a debounced/edged btn[3] press
      Fill  burst-write the payload into the TX FIFO, one byte per cycle

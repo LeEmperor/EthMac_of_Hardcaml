@@ -12,9 +12,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  print_endline "=== Imported MAC RX Byte Assembler ==="
-
 module I = struct
   type 'a t = {
     clock   : 'a;
