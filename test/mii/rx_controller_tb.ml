@@ -1,12 +1,9 @@
-(*
-  Author: Bohdan Purtell
+(* Author: Bohdan Purtell *)
 
-  Testbench: "rx_controller_tb.ml"
+(* Testbench: "rx_controller_tb.ml"
 
-  Alcotest Stanza Inclusions: 
-
-
- *)
+   Alcotest Stanza Inclusions:
+*)
 
 open! Core
 open! Hardcaml

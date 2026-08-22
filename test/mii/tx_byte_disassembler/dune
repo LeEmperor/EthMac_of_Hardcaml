@@ -1,0 +1,20 @@
+(library
+ (name tx_byte_disassembler_inline_tests)
+ (modules
+  tx_byte_disassembler_testbench
+  tx_byte_disassembler_unit_quickcheck_tests
+  tx_byte_disassembler_expect_tests)
+ (inline_tests)
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

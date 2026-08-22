@@ -75,6 +75,7 @@ The project builds entirely with [dune](https://dune.build/). All commands go th
 ./scripts/with-switch.sh dune build @lint # Jane Street style checks
 ```
 
+Generated VCD files can be opened with `./tools/open_wave.sh <vcd-file>`.
 Convenience wrappers in `./tools` (e.g. `./tools/dune_tb.sh test/mii/tx_path_tb.exe`, `./tools/open_wave.sh waves/waves_top.vcd`) do the same and can be run directly.
 
 ## Emacs

@@ -1,19 +1,18 @@
-(*
-  Author: Bohdan Purtell
+(* Author: Bohdan Purtell *)
 
-  Executable: "rx_path_tb.ml"
+(* Executable: "rx_path_tb.ml"
 
+   design notes:
+     obviously as an executable this generates the waveforms that we might want
 
+     but is it possible for us to have this exist as a test layer item?
+     do test-layer items in the alcotest framework have to adhere to being executables in
+     the first place? can tests have system-level sideeffects such as generated log files
+     or other things like waveform files?
 
-  design notes:
-    obviously as an executable this generates the waveforms that we might want
-
-    but is it possible for us to have this exist as a test layer item?
-    do test-layer items in the alcotest framework have to adhere to being executables in the first place? can tests have system-level sideeffects such as generated log files or other things like waveform files?
-
-
-    is it possible to make it a cli arg for generation of the waveforms? what about the ascii waveforms? i dont really want to see those, but i dont want to go and write new dune meta-language to define the proper requirements for new test stanzas
-
+     is it possible to make it a cli arg for generation of the waveforms? what about the
+     ascii waveforms? i dont really want to see those, but i dont want to go and write new
+     dune meta-language to define the proper requirements for new test stanzas
 *)
 
 open! Core
@@ -33,7 +32,7 @@ module Sim = Cyclesim.With_interface(Mac_top.I)(Mac_top.O)
 let create_sim () =
   let scope = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim   = Sim.create ~config:Cyclesim.Config.trace_all (Mac_top.create ~rx_fifo_for_sim:true scope) in
-  let waves, sim = Waveform.create sim in
+  let waves, sim = Cyclesim.Waveform.create sim in
   let inputs  : _ Mac_top.I.t = Cyclesim.inputs  sim in
   let outputs : _ Mac_top.O.t = Cyclesim.outputs sim in
   (sim, waves, inputs, outputs)

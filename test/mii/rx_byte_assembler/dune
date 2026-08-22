@@ -1,11 +1,10 @@
-(tests
- (names
-  rx_path_tb
-  rx_datapath_tb
-  rx_controller_tb
-  crc_tb
-  tx_crc_tb
-  tx_path_tb)
+(library
+ (name rx_byte_assembler_inline_tests)
+ (modules
+  rx_byte_assembler_testbench
+  rx_byte_assembler_unit_quickcheck_tests
+  rx_byte_assembler_expect_tests)
+ (inline_tests)
  (libraries
   core
   hardcaml
@@ -14,7 +13,7 @@
   helper_tb_functions
   hardcaml_step_testbench)
  (preprocess
-  (pps ppx_hardcaml ppx_jane ppx_expect))
+  (pps ppx_hardcaml ppx_jane))
  (lint
   (pps ppx_js_style))
  (flags

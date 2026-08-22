@@ -14,7 +14,7 @@ let create_sim () =
   let scope = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim   = Sim.create ~config:Cyclesim.Config.trace_all
                 (Second_pulse.create ~clk_freq:clk_freq_sim scope) in
-  let waves, sim = Waveform.create sim in
+  let waves, sim = Cyclesim.Waveform.create sim in
   let inputs  : _ Second_pulse.I.t = Cyclesim.inputs  sim in
   let outputs : _ Second_pulse.O.t = Cyclesim.outputs sim in
   (sim, waves, inputs, outputs)

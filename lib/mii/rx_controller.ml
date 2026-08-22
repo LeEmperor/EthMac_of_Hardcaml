@@ -13,13 +13,12 @@
   deferred for that reason; see rx_controller_intf.ml.)
 *)
 
-open Core
-open Hardcaml
-open Signal
-open Helper_circuits (* in theory things like increm_counter can be thrown in here? *)
+open! Core
+open! Hardcaml
+open! Signal
+open! Helper_circuits (* in theory things like increm_counter can be thrown in here? *)
 
-let () =
-  Stdio.print_endline "=== Imported MAC RX Controller ==="
+let () = Stdio.print_endline "=== Imported MAC RX Controller ==="
 
 module I = struct
   type 'a t = {
