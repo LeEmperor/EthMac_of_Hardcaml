@@ -32,9 +32,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported Board Top ==="
-
 (* ── Inputs: signals driven into the FPGA from the board ──────────────────── *)
 module I = struct
   type 'a t = {

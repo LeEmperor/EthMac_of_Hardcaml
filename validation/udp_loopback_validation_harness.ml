@@ -42,8 +42,6 @@ open! Hardcaml
 open! Udp_of_hardcaml   (* Udp_loopback_mac_top *)
 open! Signal
 
-let () = Stdio.print_endline "=== Imported UDP Loopback + MAC Validation Harness ==="
-
 (* Reuse the canonical board pin contract as the harness port interface. *)
 module I = Arty_board_top.I
 module O = Arty_board_top.O

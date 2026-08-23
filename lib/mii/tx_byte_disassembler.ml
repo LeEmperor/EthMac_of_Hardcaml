@@ -11,9 +11,6 @@ open! Hardcaml
 open! Signal
 open! Helper_circuits
 
-let () =
-  Stdio.print_endline "=== Imported MAC TX Nibble Serializer ==="
-
 module I = struct
   type 'a t = {
     (* spec *)

@@ -9,9 +9,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported Second Pulse ==="
-
 module I = struct
   type 'a t = {
     clk : 'a;

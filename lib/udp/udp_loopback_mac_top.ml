@@ -47,8 +47,6 @@ open! Signal
 open! Mii_of_hardcaml
 open! Ipv4_of_hardcaml
 
-let () = Stdio.print_endline "=== Imported UDP Loopback + MAC Top ==="
-
 (* ── TX endpoints (mirror Udp_mac_top; agree with udp_app.py golden constants) ── *)
 module Udp_cfg = struct
   let src_port = 0x1234

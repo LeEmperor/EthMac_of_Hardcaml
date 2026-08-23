@@ -4,9 +4,6 @@ open! Signal
 open! Always
 open! Variable
 
-let () =
-  Stdio.print_endline "=== Imported MAC RX CRC Module ==="
-
 module I = struct
   type 'a t = {
     (* spec *)

@@ -3,9 +3,6 @@ open! Hardcaml
 open! Signal
 open! Always
 
-let () =
-  Stdio.print_endline "=== Imported UART TX Top ===";
-
 module I = struct
   type 'a t = {
     clk : 'a;

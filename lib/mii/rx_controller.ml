@@ -18,8 +18,6 @@ open! Hardcaml
 open! Signal
 open! Helper_circuits (* in theory things like increm_counter can be thrown in here? *)
 
-let () = Stdio.print_endline "=== Imported MAC RX Controller ==="
-
 module I = struct
   type 'a t = {
     (* spec *)

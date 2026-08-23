@@ -76,7 +76,12 @@ The project builds entirely with [dune](https://dune.build/). All commands go th
 ```
 
 Generated VCD files can be opened with `./tools/open_wave.sh <vcd-file>`.
-Convenience wrappers in `./tools` (e.g. `./tools/dune_tb.sh test/mii/tx_path_tb.exe`, `./tools/open_wave.sh waves/waves_top.vcd`) do the same and can be run directly.
+A single testbench runs through `dune exec`. The VCD is written to the directory the
+command is run from, so create `waves/` first:
+
+```sh
+mkdir -p waves && ./scripts/with-switch.sh dune exec test/mii/tx_path_tb.exe
+```
 
 ## Emacs
 
@@ -85,8 +90,8 @@ without an extra marker file. The checked-in `.dir-locals.el` sets two-space,
 space-only OCaml indentation and configures these project commands:
 
 - configure: `./bootstrap.sh`
-- compile: `./tools/dune_build.sh`
-- test: `./tools/dune_test.sh`
+- compile: `./scripts/with-switch.sh dune build`
+- test: `./scripts/with-switch.sh dune runtest`
 
 Run `M-x project-compile` (or Projectile's compile/test commands) from any project
 buffer. Eglot users can format the current buffer with `M-x eglot-format-buffer`.

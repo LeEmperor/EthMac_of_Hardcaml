@@ -20,9 +20,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported MAC Validation Regs (stub) ==="
-
 module I = struct
   type 'a t = {
     clock : 'a;

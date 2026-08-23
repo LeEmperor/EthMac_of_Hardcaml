@@ -13,10 +13,6 @@ open! Signal
 open! Helper_circuits
 open! Common_types
 
-let () =
-  Stdio.print_endline "=== Imported MAC TX Controller ==="
-;;
-
 module I = struct
   type 'a t = {
     clock : 'a;

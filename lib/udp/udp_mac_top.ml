@@ -35,8 +35,6 @@ open! Signal
 open! Mii_of_hardcaml
 open! Ipv4_of_hardcaml
 
-let () = Stdio.print_endline "=== Imported UDP+MAC Top ==="
-
 (* fixed endpoints for the first bring-up *)
 module Udp_cfg = struct
   let src_port = 0x1234

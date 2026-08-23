@@ -20,11 +20,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () = 
-  Stdio.print_endline "=== Imported UDP System ===";
-;;
-
-
 (* need customing typing on mac configurations?*)
 
 module Bus_Implementation = struct

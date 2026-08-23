@@ -12,9 +12,6 @@ open! Core
 open! Hardcaml
 open! Signal
 
-let () =
-  Stdio.print_endline "=== Imported MAC RX Datapath ==="
-
 module I = struct
   type 'a t = {
     clock : 'a;

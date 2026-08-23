@@ -11,9 +11,6 @@ open! Hardcaml
 open! Signal
 open! Helper_circuits
 
-let () =
-  Stdio.print_endline "=== Imported MII MAC INTF TYPES ==="
-
 module States = struct
   type t = 
     | Idle
