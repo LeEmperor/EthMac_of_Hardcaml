@@ -1,12 +1,10 @@
-(*
-  Bohdan Purtell
-  University of Florida
+(* Bohdan Purtell University of Florida
 
-  Testbench: UDP (L4) RX header parser (Udp_rx)
+   Testbench: UDP (L4) RX header parser (Udp_rx)
 
-  Drives the UDP datagram byte stream exactly as Ipv4_rx presents it and checks
-  header stripping, metadata, filtering, backpressure, malformed datagrams, and
-  error forwarding.
+   Drives the UDP datagram byte stream exactly as Ipv4_rx presents it and checks header
+   stripping, metadata, filtering, backpressure, malformed datagrams, and error
+   forwarding.
 *)
 
 open! Core
@@ -15,7 +13,6 @@ open! Udp_of_hardcaml
 open! Helper_tb_functions
 
 let () = print_endline "=== Running UDP RX Testbench ==="
-
 let hi8 x = (x lsr 8) land 0xFF
 let lo8 x = x land 0xFF
 let ip32 bytes = List.fold bytes ~init:0 ~f:(fun a b -> (a lsl 8) lor (b land 0xFF))
@@ -91,7 +88,6 @@ module Testbench (C : Udp_rx.Config) = struct
     i.app_tready <-- 1;
     cycle ();
     i.reset <-- 0;
-
     let bytes = Array.of_list datagram in
     let length = Array.length bytes in
     let ptr = ref 0 in
@@ -106,11 +102,9 @@ module Testbench (C : Udp_rx.Config) = struct
     let tlast_indices = ref [] in
     let saw_payload_stall = ref false in
     let ready_low_on_all_stalls = ref true in
-
-    (* Cyclesim reports the Mealy stream qualifiers after the state register
-       update. Retain each post-cycle qualifier and pair it with the byte driven
-       in the following iteration. This is the same phase handling used by the
-       IPv4 RX testbench. *)
+    (* Cyclesim reports the Mealy stream qualifiers after the state register update.
+       Retain each post-cycle qualifier and pair it with the byte driven in the following
+       iteration. This is the same phase handling used by the IPv4 RX testbench. *)
     let q_valid = ref (bit o.Rx.O.m_tvalid) in
     let q_first = ref (bit o.m_tfirst) in
     let q_last = ref (bit o.m_tlast) in
@@ -120,14 +114,11 @@ module Testbench (C : Udp_rx.Config) = struct
       let has_byte = !ptr < length in
       let present = if has_byte then bytes.(!ptr) else 0 in
       let stalling =
-        !q_valid
-        && stall_every > 0
-        && !payload_phase mod (stall_every + 1) = stall_every
+        !q_valid && stall_every > 0 && !payload_phase mod (stall_every + 1) = stall_every
       in
       let app_ready = not stalling in
       let transfer = has_byte && !q_valid && app_ready in
       let start_event = !q_app_start && ((not !q_valid) || app_ready) in
-
       if start_event
       then (
         incr app_start_count;
@@ -147,18 +138,15 @@ module Testbench (C : Udp_rx.Config) = struct
         if !q_first then incr tfirst_count;
         if !q_last then tlast_indices := !transfer_count :: !tlast_indices;
         incr transfer_count);
-
-      i.app_tready <-- (if app_ready then 1 else 0);
-      i.rx_tvalid <-- (if has_byte then 1 else 0);
+      i.app_tready <-- if app_ready then 1 else 0;
+      i.rx_tvalid <-- if has_byte then 1 else 0;
       i.rx_tdata <-- present;
-      i.rx_tfirst <-- (if has_byte && !ptr = 0 then 1 else 0);
-      i.rx_tlast <-- (if has_byte && !ptr = length - 1 then 1 else 0);
-      i.rx_tuser <-- (if has_byte && !ptr = length - 1 && fcs_bad then 1 else 0);
-
+      i.rx_tfirst <-- if has_byte && !ptr = 0 then 1 else 0;
+      i.rx_tlast <-- if has_byte && !ptr = length - 1 then 1 else 0;
+      i.rx_tuser <-- if has_byte && !ptr = length - 1 && fcs_bad then 1 else 0;
       (* Header/Idle/Flush always accept. Payload acceptance follows app_tready. *)
       let accepted = has_byte && ((not !q_valid) || app_ready) in
       cycle ();
-
       if stalling && bit o.m_tvalid
       then (
         saw_payload_stall := true;
@@ -207,14 +195,7 @@ let () =
     if condition then incr pass_count;
     printf "  %-44s %s\n" label (if condition then "PASS" else "FAIL")
   in
-  let expect_metadata
-    result
-    ~src_port
-    ~dst_port
-    ~payload_length
-    ~checksum
-    ~src_ip
-    ~dst_ip
+  let expect_metadata result ~src_port ~dst_port ~payload_length ~checksum ~src_ip ~dst_ip
     =
     match result.metadata with
     | None -> expect "metadata captured" false
@@ -229,13 +210,11 @@ let () =
   in
   let src_ip = [ 192; 168; 1; 1 ] in
   let dst_ip = [ 192; 168; 1; 10 ] in
-
   printf "\n-- test 1: basic 4-byte payload and metadata --\n";
   let payload = [ 0xDE; 0xAD; 0xBE; 0xEF ] in
   let checksum = 0xBEEF in
   let result =
-    Accept_all.run
-      (udp_datagram ~src_port:0x1234 ~dst_port:0x1235 ~checksum ~payload ())
+    Accept_all.run (udp_datagram ~src_port:0x1234 ~dst_port:0x1235 ~checksum ~payload ())
   in
   expect "payload bytes" (List.equal Int.equal result.payload payload);
   expect "one app_start" (result.app_start_count = 1);
@@ -252,7 +231,6 @@ let () =
     ~checksum
     ~src_ip
     ~dst_ip;
-
   printf "\n-- test 2: one-byte payload --\n";
   let payload = [ 0x5A ] in
   let result =
@@ -263,7 +241,6 @@ let () =
     "tfirst and tlast share the byte"
     (result.tfirst_count = 1 && List.equal Int.equal result.tlast_indices [ 0 ]);
   expect "one app_start" (result.app_start_count = 1);
-
   printf "\n-- test 3: zero-length application datagram --\n";
   let result =
     Accept_all.run (udp_datagram ~src_port:0x2222 ~dst_port:0x1235 ~payload:[] ())
@@ -282,7 +259,6 @@ let () =
     ~checksum:0
     ~src_ip
     ~dst_ip;
-
   printf "\n-- test 4: accept-all mode reports a mismatched port --\n";
   let payload = [ 1; 2; 3 ] in
   let result =
@@ -292,7 +268,6 @@ let () =
     "mismatched payload still forwarded"
     (List.equal Int.equal result.payload payload);
   expect "port_match deasserted" (not result.port_match);
-
   printf "\n-- test 5: bound-port filtering --\n";
   let payload = [ 0x10; 0x20; 0x30; 0x40 ] in
   let dropped =
@@ -305,12 +280,9 @@ let () =
   let accepted =
     Filter_port.run (udp_datagram ~src_port:0x4321 ~dst_port:0x1235 ~payload ())
   in
-  expect
-    "right-port payload forwarded"
-    (List.equal Int.equal accepted.payload payload);
+  expect "right-port payload forwarded" (List.equal Int.equal accepted.payload payload);
   expect "right-port port_match asserted" accepted.port_match;
   expect "right-port app_start" (accepted.app_start_count = 1);
-
   printf "\n-- test 6: non-UDP IP protocol --\n";
   let result =
     Accept_all.run
@@ -320,7 +292,6 @@ let () =
   expect "TCP datagram emits no payload" (List.is_empty result.payload);
   expect "TCP datagram emits no app_start" (result.app_start_count = 0);
   expect "TCP flush clears busy" (not result.busy);
-
   printf "\n-- test 7: application backpressure --\n";
   let payload = List.init 23 ~f:(fun k -> (0x40 + k) land 0xFF) in
   let result =
@@ -328,9 +299,7 @@ let () =
       ~stall_every:3
       (udp_datagram ~src_port:0x1234 ~dst_port:0x1235 ~payload ())
   in
-  expect
-    "payload preserved under stalls"
-    (List.equal Int.equal result.payload payload);
+  expect "payload preserved under stalls" (List.equal Int.equal result.payload payload);
   expect "payload stall exercised" result.saw_payload_stall;
   expect "upstream ready low on every app stall" result.ready_low_on_all_stalls;
   expect "single tfirst transfer" (result.tfirst_count = 1);
@@ -338,14 +307,12 @@ let () =
     "tlast remains on final payload byte"
     (List.equal Int.equal result.tlast_indices [ List.length payload - 1 ]);
   expect "busy clears after stalled datagram" (not result.busy);
-
   printf "\n-- test 8: frame truncated inside UDP header --\n";
   let full = udp_datagram ~src_port:0x1234 ~dst_port:0x1235 ~payload:[ 1; 2; 3 ] () in
   let result = Accept_all.run (List.take full 5) in
   expect "header truncation emits no payload" (List.is_empty result.payload);
   expect "header truncation emits no app_start" (result.app_start_count = 0);
   expect "header truncation clears busy" (not result.busy);
-
   printf "\n-- test 9: frame truncated inside UDP payload --\n";
   let partial_payload = [ 0xA1; 0xA2; 0xA3 ] in
   let result =
@@ -363,7 +330,6 @@ let () =
   expect "truncated payload has no UDP tlast" (List.is_empty result.tlast_indices);
   expect "truncated payload latches crc_error" result.crc_error;
   expect "truncated payload clears busy" (not result.busy);
-
   printf "\n-- test 10: lower-layer error flag forwarding --\n";
   let payload = [ 0xC0; 0xFF; 0xEE ] in
   let result =
@@ -371,12 +337,9 @@ let () =
       ~fcs_bad:true
       (udp_datagram ~src_port:0x1234 ~dst_port:0x1235 ~payload ())
   in
-  expect
-    "bad-FCS payload still forwarded"
-    (List.equal Int.equal result.payload payload);
+  expect "bad-FCS payload still forwarded" (List.equal Int.equal result.payload payload);
   expect "bad-FCS crc_error asserted" result.crc_error;
   expect "bad-FCS tlast correct" (List.equal Int.equal result.tlast_indices [ 2 ]);
-
   printf "\n-- test 11: 96-byte payload --\n";
   let payload = List.init 96 ~f:(fun k -> ((k * 37) + 11) land 0xFF) in
   let result =
@@ -388,7 +351,6 @@ let () =
   (match result.metadata with
    | Some meta -> expect "large payload length metadata" (meta.payload_length = 96)
    | None -> expect "large payload metadata captured" false);
-
   printf "\n==== SUMMARY: %d/%d checks passed ====\n" !pass_count !test_count;
   print_endline "\n=== SIMULATION COMPLETE ===";
   if !pass_count <> !test_count then failwith "UDP RX testbench failures"

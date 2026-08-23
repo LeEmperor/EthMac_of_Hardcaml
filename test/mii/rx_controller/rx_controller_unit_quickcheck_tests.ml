@@ -98,7 +98,9 @@ let expected_frame (frame : Frame.t) =
 ;;
 
 let check_frame frame =
-  [%test_result: Observation.t list] (Testbench.run_frame frame) ~expect:(expected_frame frame)
+  [%test_result: Observation.t list]
+    (Testbench.run_frame frame)
+    ~expect:(expected_frame frame)
 ;;
 
 let%test_unit "walks a complete receive frame" =
@@ -110,9 +112,11 @@ let%test_unit "accepts the SFD after a single preamble byte" =
 ;;
 
 let%test_unit "byte assembler enable is en and rx_dv" =
-  List.iter [ false, false; false, true; true, false; true, true ] ~f:(fun (en, rx_dv) ->
-    let actual = (Testbench.run_enable_case ~en ~rx_dv).byte_assembler_en in
-    [%test_result: bool] actual ~expect:(en && rx_dv))
+  List.iter
+    [ false, false; false, true; true, false; true, true ]
+    ~f:(fun (en, rx_dv) ->
+      let actual = (Testbench.run_enable_case ~en ~rx_dv).byte_assembler_en in
+      [%test_result: bool] actual ~expect:(en && rx_dv))
 ;;
 
 let%test_unit "an invalid cycle does not advance the destination count" =

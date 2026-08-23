@@ -1,13 +1,13 @@
 (*
-  End-to-end UDP transmit integration test.
-
-  The source side drives application bytes through Udp_tx and Ipv4_tx into the
-  store-and-forward MAC.  The sink reconstructs bytes from the MII nibbles and
-  checks the complete wire frame against an independent software model.
-
-  This test deliberately concentrates on cross-layer behavior.  Detailed UDP,
-  IPv4, and MAC state-machine behavior belongs in their unit testbenches.
-*)
+ * End-to-end UDP transmit integration test.
+ *
+ * The source side drives application bytes through Udp_tx and Ipv4_tx into the
+ * store-and-forward MAC.  The sink reconstructs bytes from the MII nibbles and
+ * checks the complete wire frame against an independent software model.
+ *
+ * This test deliberately concentrates on cross-layer behavior.  Detailed UDP,
+ * IPv4, and MAC state-machine behavior belongs in their unit testbenches.
+ *)
 
 open! Core
 open! Hardcaml
@@ -22,7 +22,6 @@ let src_ip = [ 192; 168; 1; 10 ]
 let dst_ip = [ 192; 168; 1; 1 ]
 let src_port = 0x1234
 let dst_port = 0x1235
-
 let w16 hi lo = (hi lsl 8) lor lo
 let hi8 x = (x lsr 8) land 0xFF
 let lo8 x = x land 0xFF
@@ -42,9 +41,7 @@ let ip_checksum ~total_length =
     ]
   in
   let sum = List.fold words ~init:0 ~f:( + ) in
-  let rec fold s =
-    if s > 0xFFFF then fold ((s land 0xFFFF) + (s lsr 16)) else s
-  in
+  let rec fold s = if s > 0xFFFF then fold ((s land 0xFFFF) + (s lsr 16)) else s in
   lnot (fold sum) land 0xFFFF
 ;;
 
@@ -82,7 +79,7 @@ let golden_datagram ~app =
 
 (* Reflected Ethernet CRC-32, independently calculated from the RTL. *)
 let sw_crc_bit crc bit =
-  let feedback = ((crc land 1) lxor bit) land 1 in
+  let feedback = crc land 1 lxor bit land 1 in
   let shifted = crc lsr 1 in
   if feedback = 1 then shifted lxor 0xEDB88320 else shifted
 ;;
@@ -95,23 +92,14 @@ let sw_crc_byte crc byte =
   !crc
 ;;
 
-let sw_crc bytes =
-  List.fold bytes ~init:0xFFFFFFFF ~f:sw_crc_byte lxor 0xFFFFFFFF
-;;
-
-let bytes_of_int ~n x =
-  List.init n ~f:(fun byte -> (x lsr (8 * byte)) land 0xFF)
-;;
-
+let sw_crc bytes = List.fold bytes ~init:0xFFFFFFFF ~f:sw_crc_byte lxor 0xFFFFFFFF
+let bytes_of_int ~n x = List.init n ~f:(fun byte -> (x lsr (8 * byte)) land 0xFF)
 let exp_preamble = List.init 7 ~f:(fun _ -> 0x55)
 let exp_dst_mac = [ 0xFF; 0xFF; 0xFF; 0xFF; 0xFF; 0xFF ]
 let exp_src_mac = [ 0x02; 0x00; 0x00; 0x00; 0x00; 0x01 ]
 let exp_eth_type = [ 0x08; 0x00 ]
 let min_eth_payload = 46
-
-let make_payload ~salt n =
-  List.init n ~f:(fun index -> ((index * 37) + salt) land 0xFF)
-;;
+let make_payload ~salt n = List.init n ~f:(fun index -> ((index * 37) + salt) land 0xFF)
 
 type observation =
   { accepted_app : int list
@@ -141,7 +129,6 @@ let () =
     incr global_cycle
   in
   let bit signal = Bits.to_bool !signal in
-
   let reset () =
     i.Udp_mac_top.I.rx_reset <-- 1;
     i.tx_reset <-- 1;
@@ -159,10 +146,9 @@ let () =
     i.tx_reset <-- 0;
     i.en <-- 1
   in
-
-  (* [bubble_before index] is the number of invalid source cycles inserted
-     before offering that application byte.  Once valid is raised for a byte,
-     it and the data are held until payload_tready accepts the transfer. *)
+  (* [bubble_before index] is the number of invalid source cycles inserted before offering
+     that application byte. Once valid is raised for a byte, it and the data are held
+     until payload_tready accepts the transfer. *)
   let transmit ?(bubble_before = fun _ -> 0) app =
     if bit o.udp_busy || bit o.tx_busy
     then failwith "attempted to start a datagram while the transmitter was busy";
@@ -188,39 +174,33 @@ let () =
     let cycles = ref 0 in
     let timeout = 512 + (length * 12) in
     while !idle_after_frame < 4 && !cycles < timeout do
-      i.tx_start <-- (if !started then 0 else 1);
+      i.tx_start <-- if !started then 0 else 1;
       i.payload_len <-- length;
-
       let has_data = !pointer < length in
       let source_valid = has_data && !bubbles_left = 0 in
       let source_data = if has_data then data.(!pointer) else 0 in
-      i.payload_tvalid <-- (if source_valid then 1 else 0);
+      i.payload_tvalid <-- if source_valid then 1 else 0;
       i.payload_tdata <-- source_data;
-
       (match !previous_waiting_beat with
        | Some previous_data ->
          if (not source_valid) || source_data <> previous_data
          then source_stable_while_waiting := false
        | None -> ());
-
       let ready = bit o.Udp_mac_top.O.payload_tready in
       let accepted = source_valid && ready in
       if source_valid && not ready then saw_source_backpressure := true;
       if has_data && not source_valid then saw_source_bubble := true;
-      previous_waiting_beat :=
-        (if source_valid && not ready then Some source_data else None);
-
+      previous_waiting_beat
+      := if source_valid && not ready then Some source_data else None;
       cycle ();
       started := true;
       if accepted
       then (
         accepted_app := source_data :: !accepted_app;
         incr pointer;
-        bubbles_left :=
-          (if !pointer < length then bubble_before !pointer else 0))
+        bubbles_left := if !pointer < length then bubble_before !pointer else 0)
       else if !bubbles_left > 0
       then decr bubbles_left;
-
       let tx_en = bit o.tx_en in
       if tx_en && not !tx_en_previous
       then (
@@ -279,7 +259,6 @@ let () =
     ; source_stable_while_waiting = !source_stable_while_waiting
     }
   in
-
   let pass_count = ref 0 in
   let check_count = ref 0 in
   let expect label condition =
@@ -375,10 +354,9 @@ let () =
       (label ^ ": FCS covers header and padded payload")
       (List.equal Int.equal (slice frame ~pos:(22 + List.length wire_payload) ~len:4) fcs)
   in
-
-  (* The TX FIFO holds 128 IPv4-payload bytes.  Since the composition is
-     store-and-forward and contributes 20 IPv4 + 8 UDP header bytes, 100 bytes
-     is the largest application payload this integration can buffer. *)
+  (* The TX FIFO holds 128 IPv4-payload bytes. Since the composition is store-and-forward
+     and contributes 20 IPv4 + 8 UDP header bytes, 100 bytes is the largest application
+     payload this integration can buffer. *)
   let directed_lengths = [ 0; 1; 17; 18; 19; 40; 99; 100 ] in
   List.iteri directed_lengths ~f:(fun case_index length ->
     reset ();
@@ -390,7 +368,6 @@ let () =
       expect
         (sprintf "length boundary %dB: application backpressure exercised" length)
         observation.saw_source_backpressure);
-
   reset ();
   let bubbled_app = make_payload ~salt:0xA7 23 in
   let bubble_before index =
@@ -405,10 +382,7 @@ let () =
   let bubbled = transmit ~bubble_before bubbled_app in
   check_frame ~label:"source-valid bubbles" ~app:bubbled_app bubbled;
   expect "source-valid bubbles: bubbles exercised" bubbled.saw_source_bubble;
-  expect
-    "source-valid bubbles: backpressure exercised"
-    bubbled.saw_source_backpressure;
-
+  expect "source-valid bubbles: backpressure exercised" bubbled.saw_source_backpressure;
   printf "\n-- no-reset multi-frame sequence --\n";
   reset ();
   let sequence = [ 4; 40; 0; 18 ] in
@@ -426,17 +400,13 @@ let () =
     (List.drop_last_exn observations)
     (List.tl_exn observations)
     ~f:(fun previous next ->
-    let idle_cycles = next.first_tx_cycle - previous.last_tx_cycle - 1 in
-    expect
-      (sprintf
-         "sequence: observed MII inter-frame gap is at least 24 cycles (%d)"
-         idle_cycles)
-      (idle_cycles >= 24));
-
-  printf
-    "\n==== SUMMARY: %d/%d checks passed ====\n"
-    !pass_count
-    !check_count;
+      let idle_cycles = next.first_tx_cycle - previous.last_tx_cycle - 1 in
+      expect
+        (sprintf
+           "sequence: observed MII inter-frame gap is at least 24 cycles (%d)"
+           idle_cycles)
+        (idle_cycles >= 24));
+  printf "\n==== SUMMARY: %d/%d checks passed ====\n" !pass_count !check_count;
   print_endline "\n=== SIMULATION COMPLETE ===";
   if !pass_count <> !check_count then failwith "UDP+MAC integration test failures"
 ;;

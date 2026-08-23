@@ -1,10 +1,16 @@
 (library
  (name udp_of_hardcaml)
  ; (modules Udp)
- (libraries core hardcaml helper_circuits hardcaml_circuits mii_of_hardcaml ipv4_of_hardcaml)
+ (libraries
+  core
+  hardcaml
+  helper_circuits
+  hardcaml_circuits
+  mii_of_hardcaml
+  ipv4_of_hardcaml)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
  (lint
   (pps ppx_js_style))
- (flags (:standard -w -27-57-33-34-35-40-63-47-26))
- )
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

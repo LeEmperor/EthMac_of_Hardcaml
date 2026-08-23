@@ -3,9 +3,9 @@
 
 (* Expect Test Suite: Rx_controller
 
-   Golden cycle traces for the receive-header state sequence and recovery behavior.
-   Only asserted outputs are printed, keeping the traces readable while retaining the
-   exact state/register-enable timing.
+   Golden cycle traces for the receive-header state sequence and recovery behavior. Only
+   asserted outputs are printed, keeping the traces readable while retaining the exact
+   state/register-enable timing.
 *)
 
 open! Core
@@ -25,7 +25,8 @@ let%expect_test "walks from preamble through payload" =
   in
   let trace = List.map (Testbench.run_frame frame) ~f:Testbench.compact in
   print_s [%sexp (trace : Compact_observation.t list)];
-  [%expect {|
+  [%expect
+    {|
     (((phase (Preamble 0)) (byte 85)
       (active_outputs (byte_assembler_en fcs_present in_preamble)))
      ((phase (Preamble 1)) (byte 85)
@@ -78,7 +79,8 @@ let%expect_test "an invalid cycle pauses the destination counter" =
     ]
   in
   print_s [%sexp (compact : (string * string list) list)];
-  [%expect {|
+  [%expect
+    {|
     ((before_pause (byte_assembler_en dst_mac_reg_en in_dst_mac))
      (during_pause (byte_assembler_en dst_mac_reg_en in_dst_mac))
      (after_sixth_destination_byte (byte_assembler_en dst_mac_reg_en))
@@ -95,7 +97,8 @@ let%expect_test "reset discards a partial header" =
     ]
   in
   print_s [%sexp (compact : (string * string list) list)];
-  [%expect {|
+  [%expect
+    {|
     ((before_reset (byte_assembler_en dst_mac_reg_en in_dst_mac))
      (after_reset ())
      (after_next_preamble (byte_assembler_en fcs_present in_preamble)))
@@ -111,7 +114,8 @@ let%expect_test "rx_er aborts payload processing" =
     ]
   in
   print_s [%sexp (compact : (string * string list) list)];
-  [%expect {|
+  [%expect
+    {|
     ((before_error
       (byte_assembler_en eth_type_reg_en payload_sel emit_payload in_payload))
      (after_error (byte_assembler_en)) (following_idle_cycle ()))
