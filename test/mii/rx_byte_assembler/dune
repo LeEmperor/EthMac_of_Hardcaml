@@ -4,7 +4,15 @@
   rx_byte_assembler_testbench
   rx_byte_assembler_unit_quickcheck_tests
   rx_byte_assembler_expect_tests)
- (inline_tests)
+ ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
+ ; ../../.. from here). Works around a ppx_expect v0.18~preview bug: it drops the
+ ; directory from the test file's path when registering a test, then rebuilds the path
+ ; at exit from the bare filename plus -source-tree-root, yielding
+ ; _build/default/<basename>, which does not exist. "." points it at the runner's cwd,
+ ; where dune copies the sources. Drop this if a later ppx_expect fixes the path handling.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
  (libraries
   core
   hardcaml
