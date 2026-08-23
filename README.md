@@ -1,6 +1,6 @@
 # hardcaml_networking
 
-Networking hardware written in Hardcaml. Currently a full-duplex Ethernet MAC for 10/100 MBPs transfers. Targeted on Arty A7-100T DP83848x PHY present on board. 
+Networking hardware written in Hardcaml. Currently a full-duplex Ethernet MAC for 10/100 MBPs transfers, plus an IPv4 (L3) and UDP (L4) stack layered on top of it, and board bring-up harnesses for validating the whole thing on real hardware. Targeted on Arty A7-100T DP83848x PHY present on board.
 
 Written in [HardCaml](https://github.com/janestreet/hardcaml) as a learning project. Any suggestions or contributions welcome.
 
@@ -12,14 +12,44 @@ A Crude Image of TX path Reception:
 ---
 <br>
 
+# Repository Layout
+
+```
+lib/
+  common/   helper circuits, Arty board pin contract, clock divider, RTL generator entry point
+  mii/      the Ethernet MAC itself — RX/TX controllers, datapaths, CRC, byte (dis)assembly
+  ipv4/     IPv4 header generation (ipv4_tx) and parsing (ipv4_rx)
+  udp/      UDP header generation/parsing, plus the tops that stack UDP+IPv4 onto the MAC
+  uart/     UART transmitter
+test/       testbenches, mirroring the lib/ layout
+validation/ board-level harnesses (Arty scaffolding, XDC constraints, host-side Python)
+verilog_artifacts/ hand-written SystemVerilog from earlier board bring-up, kept for reference
+```
+
+The MAC knows nothing about IP or UDP — `mii_of_hardcaml` has no dependency on the upper
+layers. "Including a UDP/IP stack" is a question of what you instantiate *around* the MAC,
+which is what the tops in `lib/udp/` do.
+
+Two longer-form notes live alongside the code:
+
+- `HardcamlDocs.md` — Hardcaml usage notes (Cyclesim, Evsim, the Always DSL, and so on).
+- `test/test_architecture.md` — how the verification suites are structured, written from a
+  UVM background.
+
+<br>
+
+---
+
 # Installation Pre-Requisites
 
 ## Automatic
-This will install a new [opam](https://opam.ocaml.org/) switch for [OxCaml](https://oxcaml.org/get-oxcaml/), as well as the relevant package dependencies for you. 
+```./bootstrap.sh --install-deps``` verifies you have an [OxCaml](https://oxcaml.org/get-oxcaml/) [opam](https://opam.ocaml.org/) switch, installs the project's package dependencies into it, and writes `env.sh`.
 
-Run ```./bootstrap.sh --install-deps```
+It does **not** create the switch for you — if the switch is missing, bootstrap stops and
+prints the `opam switch create` line to run. Create it once (see Manual below), then rerun
+bootstrap.
 
-WARNING: This may take up to 30 minutes to install!
+WARNING: The dependency install may take up to 30 minutes!
 
 <br>
 
@@ -30,21 +60,27 @@ This is the recommended way of installing as any breaking objects won't damage t
 #### OxCaml
 OxCaml install:
 
-```opam switch create oxcaml-5.2 5.2.0+ox --repos ox=git+https://github.com/oxcaml/opam-repository.git,default```
+```opam switch create 5.2.0+ox 5.2.0+ox --repos ox=git+https://github.com/oxcaml/opam-repository.git,default```
+
+The scripts in `./scripts` and `./tools` default to a switch named `5.2.0+ox`. If you name
+yours something else, export `OPAM_SWITCH=<your-switch-name>` (or edit the generated
+`env.sh`) so the wrappers can find it.
 
 You will also want the following libraries for [OCaml](https://ocaml.org/)
 1. ```dune```
 2. ```core```
 3. ```hardcaml```
 4. ```ppx_hardcaml```
-5. ```hardcaml_circuits```
-6. ```hardcaml_waveterm```
-7. ```alcotest```
-8. ```ocamlformat```
-9. ```ppx_js_style```
-10. ```ocaml-lsp-server``` (for editor integration)
+5. ```ppx_jane```
+6. ```hardcaml_circuits```
+7. ```hardcaml_waveterm```
+8. ```hardcaml_step_testbench```
+9. ```alcotest```
+10. ```ocamlformat```
+11. ```ppx_js_style```
+12. ```ocaml-lsp-server``` (for editor integration)
 
-Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml hardcaml_circuits hardcaml_waveterm alcotest ocamlformat ppx_js_style ocaml-lsp-server``` to install the set of dependencies manually,
+Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml ppx_jane hardcaml_circuits hardcaml_waveterm hardcaml_step_testbench alcotest ocamlformat ppx_js_style ocaml-lsp-server``` to install the set of dependencies manually,
 
 ```OR``` let the bootstrap ```--install-deps``` flag handle it for you. You can also opt to install the main OxCaml switch yourself, and then let the dependencies afterwards get handled by ```./bootstrap.sh```.
 
@@ -64,7 +100,7 @@ Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml hardcam
 ---
 
 # Setup
-Run ```./bootstrap.sh```, followed by ```source ./env.sh``` to select the OxCaml opam switch for the current shell.
+Run ```./bootstrap.sh```, followed by ```source ./env.sh``` to select the OxCaml opam switch for the current shell. `env.sh` is written *by* bootstrap and is not checked in, so run bootstrap first.
 
 The project builds entirely with [dune](https://dune.build/). All commands go through `./scripts/with-switch.sh` so they run on the `5.2.0+ox` switch:
 
@@ -75,6 +111,9 @@ The project builds entirely with [dune](https://dune.build/). All commands go th
 ./scripts/with-switch.sh dune build @lint # Jane Street style checks
 ```
 
+`dune runtest` covers both the standalone testbench executables and the inline
+expect/quickcheck suites under `test/mii/<block>/`.
+
 Generated VCD files can be opened with `./tools/open_wave.sh <vcd-file>`.
 A single testbench runs through `dune exec`. The VCD is written to the directory the
 command is run from, so create `waves/` first:
@@ -82,6 +121,63 @@ command is run from, so create `waves/` first:
 ```sh
 mkdir -p waves && ./scripts/with-switch.sh dune exec test/mii/tx_path_tb.exe
 ```
+
+<br>
+
+---
+
+# Generating RTL
+
+`lib/common/generate.exe` emits Verilog, one subcommand per target, so there is no
+comment-toggling of the generator source:
+
+```sh
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- validation
+```
+
+| target | what it emits |
+| --- | --- |
+| `mac` | standalone Ethernet MAC |
+| `udp` | UDP-over-MAC stack |
+| `validation` | board MAC harness (bare MAC, both directions) |
+| `udp-tx-validation` | board UDP TX harness (fpga -> laptop, `btn[3]`) |
+| `udp-rx-validation` | board UDP RX harness (laptop -> fpga, 1 B/s drain) |
+| `udp-duplex-validation` | full-duplex UDP harness, decoupled TX + RX |
+| `udp-loopback-validation` | echo/loopback UDP harness, RX->TX bridge |
+
+Run `dune exec lib/common/generate.exe -- -help` for the current list. Output paths are
+resolved against the repo root, so the RTL lands in a stable place no matter where the
+binary ran.
+
+<br>
+
+---
+
+# Board Validation
+
+`validation/` holds everything needed to run a design on the Arty rather than in a
+simulator:
+
+- `board_scaffolding.ml` — shared Arty plumbing (reset synchronizers, the 25 MHz PHY
+  reference clock, PHY hard-reset sequencing, heartbeat LED, CDC helpers). Each harness
+  supplies only its own stimulus FSM, the core it wraps, and its LED map.
+- `*_validation_harness.ml` — the harnesses themselves, emitted by the generator targets
+  above.
+- `constraints/unified_tx_rx.xdc` — pin constraints, named to line up with the board top's
+  I/O fields exactly. `arty_master_DO_NOT_EDIT.xdc` is the untouched vendor master.
+- `udp_app.py` — host-side companion. `--echo` sends a datagram and asserts the FPGA echoes
+  it back (nonce-tagged, so late/lost/duplicated/corrupt are classified rather than lumped
+  together); `--validate` sniffs and checks the datagrams the FPGA emits. Needs `scapy` and
+  raw-socket privileges.
+- `test_udp_app_echo.py` — offline check of the echo classifier, no board and no root
+  required: `python3 validation/test_udp_app_echo.py`.
+- `send_test_frames.py` — sends raw Ethernet frames at the older LED-drain test design.
+
+<br>
+
+---
 
 ## Emacs
 
