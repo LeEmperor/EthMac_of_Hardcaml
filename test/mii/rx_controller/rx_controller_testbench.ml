@@ -3,8 +3,8 @@
 
 (* Testbench Support: Rx_controller
 
-   Shared DUT fixture, byte-level drivers, observations, and simulation scenarios used
-   by the unit, Quickcheck, and expect test suites.  [rx_data] is the output of the byte
+   Shared DUT fixture, byte-level drivers, observations, and simulation scenarios used by
+   the unit, Quickcheck, and expect test suites. [rx_data] is the output of the byte
    assembler, so one controller transaction is one complete byte.
 *)
 
@@ -13,7 +13,6 @@ open! Hardcaml
 open! Signal
 open! Mii_of_hardcaml
 open! Hardcaml_step_testbench
-
 module Dut = Rx_controller
 
 module Output_snapshot = struct
@@ -182,9 +181,7 @@ module Testbench = struct
     ~rx_data
     ~rx_data_valid
     =
-    Step.cycle
-      handler
-      (inputs ~reset ~en ~rx_dv ~rx_er ~rx_data ~rx_data_valid)
+    Step.cycle handler (inputs ~reset ~en ~rx_dv ~rx_er ~rx_data ~rx_data_valid)
     |> Step.O_data.after_edge
   ;;
 
@@ -358,14 +355,7 @@ module Testbench = struct
   let run_enable_case ~en ~rx_dv =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
       reset handler;
-      cycle
-        handler
-        ~reset:false
-        ~en
-        ~rx_dv
-        ~rx_er:false
-        ~rx_data:0
-        ~rx_data_valid:false
+      cycle handler ~reset:false ~en ~rx_dv ~rx_er:false ~rx_data:0 ~rx_data_valid:false
       |> snapshot
     in
     run_with_timeout ~timeout:5 ~testbench

@@ -1,6 +1,12 @@
 (tests
- (names udp_tx_tb udp_mac_top_tb udp_rx_tb udp_ipv4_rx_tb udp_mac_rx_tb udp_duplex_tb
-   udp_loopback_tb)
+ (names
+  udp_tx_tb
+  udp_mac_top_tb
+  udp_rx_tb
+  udp_ipv4_rx_tb
+  udp_mac_rx_tb
+  udp_duplex_tb
+  udp_loopback_tb)
  (libraries
   core
   hardcaml

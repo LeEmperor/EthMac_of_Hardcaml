@@ -1,22 +1,22 @@
 (*
-  Full-duplex UDP-over-MAC integration testbench (Harness #1 top).
-
-  Exercises [Udp_duplex_mac_top] — the union of the TX and RX composition stacks
-  around ONE [Mac_top], with the two directions INDEPENDENT (no bridge). It proves
-  the merge: both stacks work, and they work *simultaneously* on the single MAC.
-
-      RX:  MII RX nibbles ─→ Mac_top ─→ Ipv4_rx ─→ Udp_rx ─→ app        (recover)
-      TX:  app bytes ─→ Udp_tx ─→ Ipv4_tx ─→ Mac_top ─→ MII TX nibbles  (emit)
-
-  Three tests:
-    1. RX only — recover a host-shaped datagram's payload + metadata.
-    2. TX only — the emitted MII frame decodes to the golden IPv4/UDP frame.
-    3. Concurrent — an RX frame buffered in the MAC FIFO drains WHILE a TX datagram
-       is streamed out; both are checked, confirming the two stacks coexist.
-
-  Single-clock Cyclesim with [rx_fifo_for_sim:true] (sync RX FIFO; rx/tx advance
-  together). Frame/CRC builders are the same shape as udp_mac_rx_tb / udp_mac_top_tb.
-*)
+ * Full-duplex UDP-over-MAC integration testbench (Harness #1 top).
+ *
+ * Exercises [Udp_duplex_mac_top] — the union of the TX and RX composition stacks
+ * around ONE [Mac_top], with the two directions INDEPENDENT (no bridge). It proves
+ * the merge: both stacks work, and they work *simultaneously* on the single MAC.
+ *
+ *     RX:  MII RX nibbles ─→ Mac_top ─→ Ipv4_rx ─→ Udp_rx ─→ app        (recover)
+ *     TX:  app bytes ─→ Udp_tx ─→ Ipv4_tx ─→ Mac_top ─→ MII TX nibbles  (emit)
+ *
+ * Three tests:
+ *   1. RX only — recover a host-shaped datagram's payload + metadata.
+ *   2. TX only — the emitted MII frame decodes to the golden IPv4/UDP frame.
+ *   3. Concurrent — an RX frame buffered in the MAC FIFO drains WHILE a TX datagram
+ *      is streamed out; both are checked, confirming the two stacks coexist.
+ *
+ * Single-clock Cyclesim with [rx_fifo_for_sim:true] (sync RX FIFO; rx/tx advance
+ * together). Frame/CRC builders are the same shape as udp_mac_rx_tb / udp_mac_top_tb.
+ *)
 
 open! Core
 open! Hardcaml
@@ -66,17 +66,31 @@ let ipv4_udp_eth_payload ?(ethernet_padding = false) ~payload () =
   let total_length = 20 + udp_length in
   let checksum = ip_checksum ~total_length in
   let header =
-    [ 0x45; 0x00; hi8 total_length; lo8 total_length
-    ; 0x00; 0x00; 0x40; 0x00
-    ; 0x40; 0x11; hi8 checksum; lo8 checksum
+    [ 0x45
+    ; 0x00
+    ; hi8 total_length
+    ; lo8 total_length
+    ; 0x00
+    ; 0x00
+    ; 0x40
+    ; 0x00
+    ; 0x40
+    ; 0x11
+    ; hi8 checksum
+    ; lo8 checksum
     ]
-    @ src_ip @ dst_ip
+    @ src_ip
+    @ dst_ip
   in
   let udp =
-    [ hi8 src_port; lo8 src_port
-    ; hi8 dst_port; lo8 dst_port
-    ; hi8 udp_length; lo8 udp_length
-    ; 0x00; 0x00
+    [ hi8 src_port
+    ; lo8 src_port
+    ; hi8 dst_port
+    ; lo8 dst_port
+    ; hi8 udp_length
+    ; lo8 udp_length
+    ; 0x00
+    ; 0x00
     ]
     @ payload
   in
@@ -88,14 +102,16 @@ let ipv4_udp_eth_payload ?(ethernet_padding = false) ~payload () =
 
 (* ── reflected Ethernet CRC-32 / FCS ────────────────────────────────────────── *)
 let sw_crc_bit crc bit =
-  let feedback = ((crc land 1) lxor bit) land 1 in
+  let feedback = crc land 1 lxor bit land 1 in
   let shifted = crc lsr 1 in
   if feedback = 1 then shifted lxor 0xEDB88320 else shifted
 ;;
 
 let sw_crc_byte crc byte =
   let crc = ref crc in
-  for i = 0 to 7 do crc := sw_crc_bit !crc ((byte lsr i) land 1) done;
+  for i = 0 to 7 do
+    crc := sw_crc_bit !crc ((byte lsr i) land 1)
+  done;
   !crc
 ;;
 
@@ -119,7 +135,11 @@ let expected_tx_frame ~app =
   let fcs = compute_fcs crc_input in
   List.init 7 ~f:(fun _ -> 0x55)
   @ [ 0xD5 ]
-  @ tx_dst_mac @ tx_src_mac @ eth_type @ wire_payload @ fcs
+  @ tx_dst_mac
+  @ tx_src_mac
+  @ eth_type
+  @ wire_payload
+  @ fcs
 ;;
 
 type meta =
@@ -132,8 +152,8 @@ type meta =
   }
 
 type result =
-  { tx_frame : int list       (* reassembled MII TX bytes (empty if none emitted) *)
-  ; rx_payload : int list     (* recovered UDP application bytes *)
+  { tx_frame : int list (* reassembled MII TX bytes (empty if none emitted) *)
+  ; rx_payload : int list (* recovered UDP application bytes *)
   ; rx_meta : meta option
   ; rx_crc_error : bool
   }
@@ -160,7 +180,6 @@ let () =
   let o = Cyclesim.outputs sim in
   let cycle () = Cyclesim.cycle sim in
   let ( <-- ) r v = r := Bits.of_int_trunc ~width:(Bits.width !r) v in
-
   let quiet_tx () =
     i.Udp_duplex_mac_top.I.tx_start <-- 0;
     i.payload_len <-- 0;
@@ -185,7 +204,6 @@ let () =
     i.tx_reset <-- 0;
     cycle ()
   in
-
   (* Clock a whole Ethernet frame onto the MII RX pins. app_tready stays low so the
      recovered payload buffers in the MAC RX FIFO for later draining. *)
   let clock_in_rx_frame ?(corrupt_fcs = false) eth_payload =
@@ -196,29 +214,31 @@ let () =
     in
     i.rx_dv <-- 1;
     let send_byte b = send_byte ~cycle ~t_in:i.rx_data b in
-    for _ = 1 to 7 do send_byte 0x55 done;
+    for _ = 1 to 7 do
+      send_byte 0x55
+    done;
     send_byte 0xD5;
     List.iter body ~f:send_byte;
     List.iter fcs ~f:send_byte;
     i.rx_dv <-- 0;
     cycle ()
   in
-
-  (* Run [n_cycles], draining the recovered RX stream (app_tready high) while also
-     driving the TX application interface for [tx_app] (or nothing when empty).
-     Captures the MII TX nibbles and the recovered RX bytes + metadata + status. *)
+  (* Run [n_cycles], draining the recovered RX stream (app_tready high) while also driving
+     the TX application interface for [tx_app] (or nothing when empty). Captures the MII
+     TX nibbles and the recovered RX bytes + metadata + status. *)
   let run ?(tx_app = []) ~settle () =
     let data = Array.of_list tx_app in
     let length = Array.length data in
     let ptr = ref 0 in
-    let started = ref (length = 0) in  (* nothing to start if no TX payload *)
+    let started = ref (length = 0) in
+    (* nothing to start if no TX payload *)
     let nibbles = ref [] in
     let rx_got = ref [] in
     let rx_meta = ref None in
     let rx_crc_error = ref false in
     (* idle counting must only begin AFTER a transmit burst ends: the MAC is
-       store-and-forward, so tx_en is legitimately LOW while the datagram fills the
-       TX FIFO. Count idle only once tx_en has risen and fallen at least once. *)
+       store-and-forward, so tx_en is legitimately LOW while the datagram fills the TX
+       FIFO. Count idle only once tx_en has risen and fallen at least once. *)
     let tx_en_prev = ref false in
     let saw_tx_fall = ref false in
     let idle_after = ref 0 in
@@ -231,26 +251,26 @@ let () =
       (* drive TX *)
       if length > 0
       then (
-        i.tx_start <-- (if !started then 0 else 1);
+        i.tx_start <-- if !started then 0 else 1;
         i.payload_len <-- length;
         let has_data = !ptr < length in
-        i.payload_tvalid <-- (if has_data then 1 else 0);
-        i.payload_tdata <-- (if has_data then data.(!ptr) else 0))
+        i.payload_tvalid <-- if has_data then 1 else 0;
+        i.payload_tdata <-- if has_data then data.(!ptr) else 0)
       else quiet_tx ();
       let ready = bit o.Udp_duplex_mac_top.O.payload_tready in
       let accepted = length > 0 && !ptr < length && ready in
       (* sample RX drain (combinational outputs valid this cycle) *)
       if bit o.app_start
       then
-        rx_meta :=
-          Some
-            { src_port = Bits.to_int_trunc !(o.src_port)
-            ; dst_port = Bits.to_int_trunc !(o.dst_port)
-            ; udp_length = Bits.to_int_trunc !(o.udp_length)
-            ; payload_length = Bits.to_int_trunc !(o.payload_length)
-            ; src_ip = Bits.to_int_trunc !(o.src_ip)
-            ; dst_ip = Bits.to_int_trunc !(o.dst_ip)
-            };
+        rx_meta
+        := Some
+             { src_port = Bits.to_int_trunc !(o.src_port)
+             ; dst_port = Bits.to_int_trunc !(o.dst_port)
+             ; udp_length = Bits.to_int_trunc !(o.udp_length)
+             ; payload_length = Bits.to_int_trunc !(o.payload_length)
+             ; src_ip = Bits.to_int_trunc !(o.src_ip)
+             ; dst_ip = Bits.to_int_trunc !(o.dst_ip)
+             };
       if bit o.app_tvalid then rx_got := Bits.to_int_trunc !(o.app_tdata) :: !rx_got;
       if bit o.crc_error then rx_crc_error := true;
       let tx_en = bit o.tx_en in
@@ -276,23 +296,23 @@ let () =
     ; rx_crc_error = !rx_crc_error
     }
   in
-
   let expect_rx ~label ~result ~payload =
-    check (label ^ ": RX payload recovered")
+    check
+      (label ^ ": RX payload recovered")
       (List.equal Int.equal result.rx_payload payload);
-    (match result.rx_meta with
-     | None -> check (label ^ ": RX metadata captured") false
-     | Some m ->
-       check (label ^ ": RX src/dst port") (m.src_port = src_port && m.dst_port = dst_port);
-       check (label ^ ": RX udp length") (m.udp_length = 8 + List.length payload);
-       check (label ^ ": RX payload length") (m.payload_length = List.length payload);
-       check (label ^ ": RX src/dst ip") (m.src_ip = ip32 src_ip && m.dst_ip = ip32 dst_ip))
+    match result.rx_meta with
+    | None -> check (label ^ ": RX metadata captured") false
+    | Some m ->
+      check (label ^ ": RX src/dst port") (m.src_port = src_port && m.dst_port = dst_port);
+      check (label ^ ": RX udp length") (m.udp_length = 8 + List.length payload);
+      check (label ^ ": RX payload length") (m.payload_length = List.length payload);
+      check (label ^ ": RX src/dst ip") (m.src_ip = ip32 src_ip && m.dst_ip = ip32 dst_ip)
   in
   let expect_tx ~label ~result ~app =
-    check (label ^ ": TX frame == golden IPv4/UDP frame")
+    check
+      (label ^ ": TX frame == golden IPv4/UDP frame")
       (List.equal Int.equal result.tx_frame (expected_tx_frame ~app))
   in
-
   (* ── test 1: RX only ─────────────────────────────────────────────────────── *)
   printf "\n-- test 1: RX-only datagram recovery --\n";
   reset ();
@@ -302,15 +322,13 @@ let () =
   expect_rx ~label:"test 1" ~result:r1 ~payload:rx_payload1;
   check "test 1: no RX CRC error on a good frame" (not r1.rx_crc_error);
   check "test 1: TX stayed idle" (List.is_empty r1.tx_frame);
-
   (* ── test 2: TX only ─────────────────────────────────────────────────────── *)
   printf "\n-- test 2: TX-only datagram emission --\n";
   reset ();
-  let tx_app2 = List.init 18 ~f:(fun k -> (k * 37 + 5) land 0xFF) in
+  let tx_app2 = List.init 18 ~f:(fun k -> ((k * 37) + 5) land 0xFF) in
   let r2 = run ~tx_app:tx_app2 ~settle:8 () in
   expect_tx ~label:"test 2" ~result:r2 ~app:tx_app2;
   check "test 2: no RX payload emitted" (List.is_empty r2.rx_payload);
-
   (* ── test 3: concurrent RX drain + TX emit on the one MAC ────────────────── *)
   printf "\n-- test 3: concurrent full-duplex (RX drains while TX emits) --\n";
   reset ();
@@ -321,11 +339,9 @@ let () =
   expect_rx ~label:"test 3" ~result:r3 ~payload:rx_payload3;
   expect_tx ~label:"test 3" ~result:r3 ~app:tx_app3;
   check "test 3: no RX CRC error while transmitting" (not r3.rx_crc_error);
-
   printf "\n==== SUMMARY: %s ====\n" (if !all_ok then "ALL PASS" else "FAILURES");
   print_endline "\n=== SIMULATION COMPLETE ===";
   if not !all_ok then exit 1
 ;;
 
 (**)
-

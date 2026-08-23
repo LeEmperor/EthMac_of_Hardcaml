@@ -1,31 +1,31 @@
 (*
-  Echo / loopback UDP-over-MAC integration testbench (Harness #2 top).
-
-  Exercises [Udp_loopback_mac_top] — one [Mac_top], both composition stacks, and an
-  RX->TX **bridge FSM** that feeds the recovered application stream straight back
-  into the UDP TX interface. Unlike the duplex top, there is NO external TX app
-  interface and NO app_tready input: the echo is entirely RX-triggered, and the
-  bridge drives RX backpressure internally.
-
-      MII RX nibbles ─→ Mac_top ─→ Ipv4_rx ─→ Udp_rx ─→ bridge ─→ Udp_tx ─→ Ipv4_tx
-                                                                    ─→ Mac_top ─→ MII TX
-
-  The end-to-end proof is the echo: drive a full IPv4/UDP frame onto the MII RX
-  pins, capture the re-emitted MII TX nibbles, reassemble them, and assert the
-  echoed frame == the golden IPv4/UDP frame carrying the SAME application payload
-  (which also pins the regenerated IPv4 header checksum + Ethernet FCS, since the
-  golden builder computes both). RX metadata (ports/ips/length) is checked off the
-  held app_start pulse.
-
-  Four tests:
-    1. normal 18-byte datagram (no MAC pad)              — echo == golden.
-    2. alternating 0xAA/0x55 payload                      — echo == golden.
-    3. short (4-byte) datagram, MAC-padded to 46 bytes    — echo re-pads correctly.
-    4. bad-FCS-in                                          — forward-everything policy:
-       payload survives, so the echo still matches golden, and crc_error is flagged.
-
-  Single-clock Cyclesim with [rx_fifo_for_sim:true]. Builders match udp_duplex_tb.
-*)
+ * Echo / loopback UDP-over-MAC integration testbench (Harness #2 top).
+ *
+ * Exercises [Udp_loopback_mac_top] — one [Mac_top], both composition stacks, and an
+ * RX->TX **bridge FSM** that feeds the recovered application stream straight back
+ * into the UDP TX interface. Unlike the duplex top, there is NO external TX app
+ * interface and NO app_tready input: the echo is entirely RX-triggered, and the
+ * bridge drives RX backpressure internally.
+ *
+ *     MII RX nibbles ─→ Mac_top ─→ Ipv4_rx ─→ Udp_rx ─→ bridge ─→ Udp_tx ─→ Ipv4_tx
+ *                                                                   ─→ Mac_top ─→ MII TX
+ *
+ * The end-to-end proof is the echo: drive a full IPv4/UDP frame onto the MII RX
+ * pins, capture the re-emitted MII TX nibbles, reassemble them, and assert the
+ * echoed frame == the golden IPv4/UDP frame carrying the SAME application payload
+ * (which also pins the regenerated IPv4 header checksum + Ethernet FCS, since the
+ * golden builder computes both). RX metadata (ports/ips/length) is checked off the
+ * held app_start pulse.
+ *
+ * Four tests:
+ *   1. normal 18-byte datagram (no MAC pad)              — echo == golden.
+ *   2. alternating 0xAA/0x55 payload                      — echo == golden.
+ *   3. short (4-byte) datagram, MAC-padded to 46 bytes    — echo re-pads correctly.
+ *   4. bad-FCS-in                                          — forward-everything policy:
+ *      payload survives, so the echo still matches golden, and crc_error is flagged.
+ *
+ * Single-clock Cyclesim with [rx_fifo_for_sim:true]. Builders match udp_duplex_tb.
+ *)
 
 open! Core
 open! Hardcaml
@@ -74,17 +74,31 @@ let ipv4_udp_eth_payload ?(ethernet_padding = false) ~payload () =
   let total_length = 20 + udp_length in
   let checksum = ip_checksum ~total_length in
   let header =
-    [ 0x45; 0x00; hi8 total_length; lo8 total_length
-    ; 0x00; 0x00; 0x40; 0x00
-    ; 0x40; 0x11; hi8 checksum; lo8 checksum
+    [ 0x45
+    ; 0x00
+    ; hi8 total_length
+    ; lo8 total_length
+    ; 0x00
+    ; 0x00
+    ; 0x40
+    ; 0x00
+    ; 0x40
+    ; 0x11
+    ; hi8 checksum
+    ; lo8 checksum
     ]
-    @ src_ip @ dst_ip
+    @ src_ip
+    @ dst_ip
   in
   let udp =
-    [ hi8 src_port; lo8 src_port
-    ; hi8 dst_port; lo8 dst_port
-    ; hi8 udp_length; lo8 udp_length
-    ; 0x00; 0x00
+    [ hi8 src_port
+    ; lo8 src_port
+    ; hi8 dst_port
+    ; lo8 dst_port
+    ; hi8 udp_length
+    ; lo8 udp_length
+    ; 0x00
+    ; 0x00
     ]
     @ payload
   in
@@ -96,14 +110,16 @@ let ipv4_udp_eth_payload ?(ethernet_padding = false) ~payload () =
 
 (* ── reflected Ethernet CRC-32 / FCS ────────────────────────────────────────── *)
 let sw_crc_bit crc bit =
-  let feedback = ((crc land 1) lxor bit) land 1 in
+  let feedback = crc land 1 lxor bit land 1 in
   let shifted = crc lsr 1 in
   if feedback = 1 then shifted lxor 0xEDB88320 else shifted
 ;;
 
 let sw_crc_byte crc byte =
   let crc = ref crc in
-  for i = 0 to 7 do crc := sw_crc_bit !crc ((byte lsr i) land 1) done;
+  for i = 0 to 7 do
+    crc := sw_crc_bit !crc ((byte lsr i) land 1)
+  done;
   !crc
 ;;
 
@@ -118,9 +134,9 @@ let tx_dst_mac = [ 0xFF; 0xFF; 0xFF; 0xFF; 0xFF; 0xFF ]
 let tx_src_mac = [ 0x02; 0x00; 0x00; 0x00; 0x00; 0x01 ]
 let eth_type = [ 0x08; 0x00 ]
 
-(* Expected full MII TX frame (preamble..FCS) for a given application payload. The
-   golden builder recomputes the IPv4 checksum and Ethernet FCS, so an exact match
-   validates the echo end-to-end (recovered payload + regenerated headers/FCS). *)
+(* Expected full MII TX frame (preamble..FCS) for a given application payload. The golden
+   builder recomputes the IPv4 checksum and Ethernet FCS, so an exact match validates the
+   echo end-to-end (recovered payload + regenerated headers/FCS). *)
 let expected_tx_frame ~app =
   let datagram = ipv4_udp_eth_payload ~payload:app () in
   let pad = List.init (Int.max 0 (46 - List.length datagram)) ~f:(fun _ -> 0) in
@@ -129,7 +145,11 @@ let expected_tx_frame ~app =
   let fcs = compute_fcs crc_input in
   List.init 7 ~f:(fun _ -> 0x55)
   @ [ 0xD5 ]
-  @ tx_dst_mac @ tx_src_mac @ eth_type @ wire_payload @ fcs
+  @ tx_dst_mac
+  @ tx_src_mac
+  @ eth_type
+  @ wire_payload
+  @ fcs
 ;;
 
 type meta =
@@ -142,7 +162,7 @@ type meta =
   }
 
 type result =
-  { tx_frame : int list       (* reassembled MII TX bytes (empty if no echo) *)
+  { tx_frame : int list (* reassembled MII TX bytes (empty if no echo) *)
   ; rx_meta : meta option
   ; rx_crc_error : bool
   }
@@ -166,30 +186,28 @@ let () =
   let i = Cyclesim.inputs sim in
   let o = Cyclesim.outputs sim in
   let ( <-- ) r v = r := Bits.of_int_trunc ~width:(Bits.width !r) v in
-
-  (* app_start is HELD only until the bridge accepts the first recovered byte —
-     which, being cut-through, happens while the frame is still clocking in. So
-     sample RX metadata + crc_error on EVERY cycle (frame clock-in included), not
-     just during the echo-capture window. *)
+  (* app_start is HELD only until the bridge accepts the first recovered byte — which,
+     being cut-through, happens while the frame is still clocking in. So sample RX
+     metadata + crc_error on EVERY cycle (frame clock-in included), not just during the
+     echo-capture window. *)
   let g_rx_meta = ref None in
   let g_rx_crc_error = ref false in
   let bit s = Bits.to_bool !s in
   let cycle () =
     if bit o.Udp_loopback_mac_top.O.app_start
     then
-      g_rx_meta :=
-        Some
-          { src_port = Bits.to_int_trunc !(o.src_port)
-          ; dst_port = Bits.to_int_trunc !(o.dst_port)
-          ; udp_length = 8 + Bits.to_int_trunc !(o.payload_length)
-          ; payload_length = Bits.to_int_trunc !(o.payload_length)
-          ; src_ip = Bits.to_int_trunc !(o.src_ip)
-          ; dst_ip = Bits.to_int_trunc !(o.dst_ip)
-          };
+      g_rx_meta
+      := Some
+           { src_port = Bits.to_int_trunc !(o.src_port)
+           ; dst_port = Bits.to_int_trunc !(o.dst_port)
+           ; udp_length = 8 + Bits.to_int_trunc !(o.payload_length)
+           ; payload_length = Bits.to_int_trunc !(o.payload_length)
+           ; src_ip = Bits.to_int_trunc !(o.src_ip)
+           ; dst_ip = Bits.to_int_trunc !(o.dst_ip)
+           };
     if bit o.crc_error then g_rx_crc_error := true;
     Cyclesim.cycle sim
   in
-
   let quiet_rx () =
     i.Udp_loopback_mac_top.I.rx_dv <-- 0;
     i.rx_er <-- 0;
@@ -208,9 +226,8 @@ let () =
     i.tx_reset <-- 0;
     cycle ()
   in
-
-  (* Clock a whole Ethernet frame onto the MII RX pins. The bridge drives RX
-     backpressure internally, so no draining knob is needed here. *)
+  (* Clock a whole Ethernet frame onto the MII RX pins. The bridge drives RX backpressure
+     internally, so no draining knob is needed here. *)
   let clock_in_rx_frame ?(corrupt_fcs = false) eth_payload =
     let body = rx_dst_mac @ rx_src_mac @ eth_type @ eth_payload in
     let fcs =
@@ -219,18 +236,19 @@ let () =
     in
     i.rx_dv <-- 1;
     let send_byte b = send_byte ~cycle ~t_in:i.rx_data b in
-    for _ = 1 to 7 do send_byte 0x55 done;
+    for _ = 1 to 7 do
+      send_byte 0x55
+    done;
     send_byte 0xD5;
     List.iter body ~f:send_byte;
     List.iter fcs ~f:send_byte;
     i.rx_dv <-- 0;
     cycle ()
   in
-
-  (* Free-run, capturing the MII TX echo (nibbles while tx_en), the RX metadata
-     (latched on the held app_start pulse), and any RX CRC error. Stops once the
-     store-and-forward TX burst has risen, fallen, and the wire has been idle a
-     while (the MAC legitimately holds tx_en LOW while the echo fills the TX FIFO). *)
+  (* Free-run, capturing the MII TX echo (nibbles while tx_en), the RX metadata (latched
+     on the held app_start pulse), and any RX CRC error. Stops once the store-and-forward
+     TX burst has risen, fallen, and the wire has been idle a while (the MAC legitimately
+     holds tx_en LOW while the echo fills the TX FIFO). *)
   let capture ~settle () =
     let nibbles = ref [] in
     let tx_en_prev = ref false in
@@ -257,19 +275,18 @@ let () =
     ; rx_crc_error = !g_rx_crc_error
     }
   in
-
   let expect_echo ~label ~result ~app =
-    check (label ^ ": echo frame == golden IPv4/UDP frame")
+    check
+      (label ^ ": echo frame == golden IPv4/UDP frame")
       (List.equal Int.equal result.tx_frame (expected_tx_frame ~app));
-    (match result.rx_meta with
-     | None -> check (label ^ ": RX metadata captured") false
-     | Some m ->
-       check (label ^ ": RX src/dst port") (m.src_port = src_port && m.dst_port = dst_port);
-       check (label ^ ": RX payload length") (m.payload_length = List.length app);
-       check (label ^ ": RX udp length") (m.udp_length = 8 + List.length app);
-       check (label ^ ": RX src/dst ip") (m.src_ip = ip32 src_ip && m.dst_ip = ip32 dst_ip))
+    match result.rx_meta with
+    | None -> check (label ^ ": RX metadata captured") false
+    | Some m ->
+      check (label ^ ": RX src/dst port") (m.src_port = src_port && m.dst_port = dst_port);
+      check (label ^ ": RX payload length") (m.payload_length = List.length app);
+      check (label ^ ": RX udp length") (m.udp_length = 8 + List.length app);
+      check (label ^ ": RX src/dst ip") (m.src_ip = ip32 src_ip && m.dst_ip = ip32 dst_ip)
   in
-
   (* ── test 1: normal 18-byte datagram (no MAC pad) ────────────────────────── *)
   printf "\n-- test 1: normal 18-byte datagram echo --\n";
   reset ();
@@ -278,7 +295,6 @@ let () =
   let r1 = capture ~settle:8 () in
   expect_echo ~label:"test 1" ~result:r1 ~app:app1;
   check "test 1: no RX CRC error on a good frame" (not r1.rx_crc_error);
-
   (* ── test 2: alternating 0xAA/0x55 payload ───────────────────────────────── *)
   printf "\n-- test 2: alternating 0xAA/0x55 payload echo --\n";
   reset ();
@@ -287,7 +303,6 @@ let () =
   let r2 = capture ~settle:8 () in
   expect_echo ~label:"test 2" ~result:r2 ~app:app2;
   check "test 2: no RX CRC error on a good frame" (not r2.rx_crc_error);
-
   (* ── test 3: short 4-byte datagram, MAC-padded in, re-padded on echo ──────── *)
   printf "\n-- test 3: short (4-byte) MAC-padded datagram echo --\n";
   reset ();
@@ -296,18 +311,16 @@ let () =
   let r3 = capture ~settle:8 () in
   expect_echo ~label:"test 3" ~result:r3 ~app:app3;
   check "test 3: no RX CRC error on a good frame" (not r3.rx_crc_error);
-
   (* ── test 4: bad-FCS-in — forward-everything policy ──────────────────────── *)
   printf "\n-- test 4: bad-FCS input (echoed-but-flagged policy) --\n";
   reset ();
-  let app4 = List.init 18 ~f:(fun k -> (k * 13 + 7) land 0xFF) in
+  let app4 = List.init 18 ~f:(fun k -> ((k * 13) + 7) land 0xFF) in
   clock_in_rx_frame ~corrupt_fcs:true (ipv4_udp_eth_payload ~payload:app4 ());
   let r4 = capture ~settle:8 () in
-  (* payload bytes are intact (only the trailing FCS was corrupted), so the echo
-     still matches golden; the difference is the flagged CRC error. *)
+  (* payload bytes are intact (only the trailing FCS was corrupted), so the echo still
+     matches golden; the difference is the flagged CRC error. *)
   expect_echo ~label:"test 4" ~result:r4 ~app:app4;
   check "test 4: RX CRC error flagged on the bad-FCS frame" r4.rx_crc_error;
-
   printf "\n==== SUMMARY: %s ====\n" (if !all_ok then "ALL PASS" else "FAILURES");
   print_endline "\n=== SIMULATION COMPLETE ===";
   if not !all_ok then exit 1

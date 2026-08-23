@@ -5,14 +5,27 @@
 ; The MAC validation harness library. Its RTL is now emitted by the unified
 ; generator: `dune exec lib/common/generate.exe -- validation`
 ; (the former generate_validation.exe was folded into lib/common/generate.ml).
+
 (library
  (name mac_validation)
  (wrapped false)
- (libraries core hardcaml helper_circuits mii_of_hardcaml udp_of_hardcaml hardcaml_circuits)
- (modules board_scaffolding mac_top_validation_harness mac_top_validation_harness_regs
-   udp_mac_top_validation_harness udp_rx_mac_top_validation_harness
-   udp_duplex_validation_harness udp_loopback_validation_harness)
- (flags (:standard -w -27-57-33-34-35-40-63-47-26))
+ (libraries
+  core
+  hardcaml
+  helper_circuits
+  mii_of_hardcaml
+  udp_of_hardcaml
+  hardcaml_circuits)
+ (modules
+  board_scaffolding
+  mac_top_validation_harness
+  mac_top_validation_harness_regs
+  udp_mac_top_validation_harness
+  udp_rx_mac_top_validation_harness
+  udp_duplex_validation_harness
+  udp_loopback_validation_harness)
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26))
  (preprocess
   (pps ppx_hardcaml ppx_jane))
  (lint

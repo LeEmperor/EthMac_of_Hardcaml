@@ -1,9 +1,7 @@
-(*
-  Bohdan Purtell
-  University of Florida
+(* Bohdan Purtell University of Florida
 
-  Module: Common Types 
-  This module serves the purpose of an sv_pkg for common types and functions between different module participants - like how _intf works.
+   Module: Common Types This module serves the purpose of an sv_pkg for common types and
+   functions between different module participants - like how _intf works.
 *)
 
 open! Core
@@ -12,7 +10,7 @@ open! Signal
 open! Helper_circuits
 
 module States = struct
-  type t = 
+  type t =
     | Idle
     | Preamble
     | Sfd
@@ -32,13 +30,12 @@ module States = struct
   ;;
 
   (* let byte_source_of_state = function *)
-  (*   | Idle      -> zero 8 *)
-  (*   | Preamble  -> of_int_trunc ~width:8 55 *)
-  (*   | Sfd       -> of_int_trunc ~width:8 D5 *)
-  (*   | Dst_mac   -> dst_mac_mux *)
-  (*   | Src_mac   ->  *)
-  (*   | Eth_type  ->  *)
-  (*   | Payload   ->  *)
-  (*   | Fcs       ->  *)
+  (* | Idle -> zero 8 *)
+  (* | Preamble -> of_int_trunc ~width:8 55 *)
+  (* | Sfd -> of_int_trunc ~width:8 D5 *)
+  (* | Dst_mac -> dst_mac_mux *)
+  (* | Src_mac -> *)
+  (* | Eth_type -> *)
+  (* | Payload -> *)
+  (* | Fcs -> *)
 end
-

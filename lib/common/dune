@@ -1,42 +1,33 @@
 (executables
  (modes byte exe)
  (names generate)
- ( libraries 
-   core.command 
-   core_unix.command_unix 
-   core 
-   hardcaml
-   jane_rope
-   mii_of_hardcaml
-   udp_of_hardcaml
-   uart_of_hardcaml
-   mac_validation
-  )
+ (libraries
+  core.command
+  core_unix.command_unix
+  core
+  hardcaml
+  jane_rope
+  mii_of_hardcaml
+  udp_of_hardcaml
+  uart_of_hardcaml
+  mac_validation)
  (modules generate)
-
- (flags (:standard -w -27-57-33-34-35-40-63-47-26))
-
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26))
  (preprocess
   (pps ppx_jane))
-
  (lint
   (pps ppx_js_style))
-
- (promote)
-)
+ (promote))
 
 (library
-  (name helper_circuits)
-  (wrapped false)
-  (libraries core hardcaml hardcaml_circuits)
-  (modules helper_circuits arty_board_top clk_div second_pulse)
-  (flags (:standard -w -27-57-33-34-35-40-63-47-26))
-
-  (preprocess
-    (pps ppx_hardcaml ppx_jane)
-  )
-
-  (lint
-    (pps ppx_js_style)
-  )
-)
+ (name helper_circuits)
+ (wrapped false)
+ (libraries core hardcaml hardcaml_circuits)
+ (modules helper_circuits arty_board_top clk_div second_pulse)
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26))
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style)))

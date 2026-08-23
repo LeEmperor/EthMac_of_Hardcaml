@@ -2,7 +2,7 @@
 
    The input is the Ethernet-payload stream exposed by Mac_top:
 
-     Ethernet payload -> Ipv4_rx -> Udp_rx -> application
+   Ethernet payload -> Ipv4_rx -> Udp_rx -> application
 *)
 
 open! Core
@@ -12,7 +12,6 @@ open! Udp_of_hardcaml
 open! Helper_tb_functions
 
 let () = print_endline "=== Running IPv4+UDP RX Integration Testbench ==="
-
 let hi8 x = (x lsr 8) land 0xFF
 let lo8 x = x land 0xFF
 let w16 hi lo = ((hi land 0xFF) lsl 8) lor (lo land 0xFF)
@@ -175,7 +174,8 @@ struct
   let create scope (i : _ I.t) =
     let udp_ready = Signal.wire 1 in
     let ip =
-      Ip.create (Scope.sub_scope scope "ipv4_rx")
+      Ip.create
+        (Scope.sub_scope scope "ipv4_rx")
         { Ip.I.clock = i.clock
         ; reset = i.reset
         ; en = i.en
@@ -189,7 +189,8 @@ struct
         }
     in
     let udp =
-      Udp.create (Scope.sub_scope scope "udp_rx")
+      Udp.create
+        (Scope.sub_scope scope "udp_rx")
         { Udp.I.clock = i.clock
         ; reset = i.reset
         ; en = i.en
@@ -250,7 +251,6 @@ struct
     i.app_tready <-- 1;
     cycle ();
     i.reset <-- 0;
-
     let bytes = Array.of_list frame in
     let length = Array.length bytes in
     let ptr = ref 0 in
@@ -274,14 +274,11 @@ struct
       let has_byte = !ptr < length in
       let present = if has_byte then bytes.(!ptr) else 0 in
       let stalling =
-        !q_valid
-        && stall_every > 0
-        && !payload_phase mod (stall_every + 1) = stall_every
+        !q_valid && stall_every > 0 && !payload_phase mod (stall_every + 1) = stall_every
       in
       let app_ready = not stalling in
       let transfer = has_byte && !q_valid && app_ready in
       let start_event = !q_app_start && ((not !q_valid) || app_ready) in
-
       if start_event
       then (
         incr app_start_count;
@@ -301,18 +298,14 @@ struct
         if !q_first then incr tfirst_count;
         if !q_last then tlast_indices := !transfer_count :: !tlast_indices;
         incr transfer_count);
-
-      i.app_tready <-- (if app_ready then 1 else 0);
-      i.rx_tvalid <-- (if has_byte then 1 else 0);
+      i.app_tready <-- if app_ready then 1 else 0;
+      i.rx_tvalid <-- if has_byte then 1 else 0;
       i.rx_tdata <-- present;
-      i.rx_tfirst <-- (if has_byte && !ptr = 0 then 1 else 0);
-      i.rx_tlast <-- (if has_byte && !ptr = length - 1 then 1 else 0);
-      i.rx_tuser
-      <-- (if has_byte && !ptr = length - 1 && fcs_bad then 1 else 0);
-
+      i.rx_tfirst <-- if has_byte && !ptr = 0 then 1 else 0;
+      i.rx_tlast <-- if has_byte && !ptr = length - 1 then 1 else 0;
+      i.rx_tuser <-- if has_byte && !ptr = length - 1 && fcs_bad then 1 else 0;
       let accepted = has_byte && ((not !q_valid) || app_ready) in
       cycle ();
-
       if stalling && bit o.m_tvalid
       then (
         saw_app_stall := true;
@@ -386,41 +379,42 @@ let () =
       ~payload
       ()
   in
-
   printf "\n-- test 1: normal IPv4/UDP datagram --\n";
   let payload = List.init 32 ~f:(fun k -> ((k * 13) + 7) land 0xFF) in
   let udp_checksum = 0xBEEF in
   let result = Drop_bad_checksum.run (make ~udp_checksum payload) in
-  expect "payload crosses both layers byte-perfectly"
+  expect
+    "payload crosses both layers byte-perfectly"
     (List.equal Int.equal result.payload payload);
   expect "one application start" (result.app_start_count = 1);
   expect "one application tfirst" (result.tfirst_count = 1);
-  expect "application tlast is on the final byte"
+  expect
+    "application tlast is on the final byte"
     (List.equal Int.equal result.tlast_indices [ List.length payload - 1 ]);
   expect "IPv4 checksum accepted" result.checksum_ok;
   expect "no lower-layer error" (not result.crc_error);
-  expect "both parsers return idle" (not result.ip_busy && not result.udp_busy);
+  expect "both parsers return idle" ((not result.ip_busy) && not result.udp_busy);
   expect_metadata result ~src_port ~dst_port ~payload ~udp_checksum ~src_ip ~dst_ip;
-
   printf "\n-- test 2: Ethernet minimum-frame padding is dropped --\n";
   let payload = [ 0xDE; 0xAD; 0xBE; 0xEF ] in
   let frame = make ~ethernet_padding:true payload in
   expect "test vector contains Ethernet padding" (List.length frame = 46);
   let result = Drop_bad_checksum.run frame in
-  expect "padding never reaches the application"
+  expect
+    "padding never reaches the application"
     (List.equal Int.equal result.payload payload);
-  expect "tlast follows UDP length, not Ethernet length"
+  expect
+    "tlast follows UDP length, not Ethernet length"
     (List.equal Int.equal result.tlast_indices [ 3 ]);
-  expect "both parsers drain padding and return idle"
-    (not result.ip_busy && not result.udp_busy);
-
+  expect
+    "both parsers drain padding and return idle"
+    ((not result.ip_busy) && not result.udp_busy);
   printf "\n-- test 3: non-IPv4 EtherType is rejected at L3 --\n";
   let payload = [ 1; 2; 3; 4; 5 ] in
   let result = Drop_bad_checksum.run ~eth_type:0x0806 (make payload) in
   expect "non-IPv4 frame emits no application bytes" (List.is_empty result.payload);
   expect "non-IPv4 frame emits no application start" (result.app_start_count = 0);
-  expect "both parsers return idle" (not result.ip_busy && not result.udp_busy);
-
+  expect "both parsers return idle" ((not result.ip_busy) && not result.udp_busy);
   printf "\n-- test 4: bad IPv4 checksum is dropped when enforcement is enabled --\n";
   let payload = List.init 12 ~f:(fun k -> (0x80 + k) land 0xFF) in
   let bad_frame = make ~corrupt_ip_checksum:true payload in
@@ -428,46 +422,35 @@ let () =
   expect "bad-checksum frame emits no application bytes" (List.is_empty result.payload);
   expect "bad-checksum frame emits no application start" (result.app_start_count = 0);
   expect "bad IPv4 checksum is reported" (not result.checksum_ok);
-
   printf "\n-- test 5: bad IPv4 checksum can be reported without dropping --\n";
   let result = Report_bad_checksum.run bad_frame in
-  expect "payload is forwarded in report-only mode"
+  expect
+    "payload is forwarded in report-only mode"
     (List.equal Int.equal result.payload payload);
   expect "bad IPv4 checksum remains visible" (not result.checksum_ok);
   expect "one application start in report-only mode" (result.app_start_count = 1);
-
   printf "\n-- test 6: application stalls propagate through UDP and IPv4 --\n";
   let payload = List.init 37 ~f:(fun k -> ((k * 29) + 3) land 0xFF) in
   let result = Drop_bad_checksum.run ~stall_every:3 (make payload) in
-  expect "payload survives end-to-end backpressure"
+  expect
+    "payload survives end-to-end backpressure"
     (List.equal Int.equal result.payload payload);
   expect "application stall was exercised" result.saw_app_stall;
-  expect "IPv4 input ready is low throughout application stalls"
+  expect
+    "IPv4 input ready is low throughout application stalls"
     result.ready_low_on_all_stalls;
   expect "single tfirst under stalls" (result.tfirst_count = 1);
-  expect "tlast remains on the final stalled payload byte"
+  expect
+    "tlast remains on the final stalled payload byte"
     (List.equal Int.equal result.tlast_indices [ List.length payload - 1 ]);
-
   printf "\n-- test 7: TX-format golden vector round-trips through RX --\n";
-  (* These are the Udp_mac_top TX endpoint constants. This builder is independent
-     of both RX parsers and matches the TX integration golden. *)
+  (* These are the Udp_mac_top TX endpoint constants. This builder is independent of both
+     RX parsers and matches the TX integration golden. *)
   let payload = List.init 18 ~f:(fun k -> (0x40 + k) land 0xFF) in
   let result = Drop_bad_checksum.run (make payload) in
-  expect "TX-format payload is recovered"
-    (List.equal Int.equal result.payload payload);
-  expect_metadata
-    result
-    ~src_port
-    ~dst_port
-    ~payload
-    ~udp_checksum:0
-    ~src_ip
-    ~dst_ip;
-
-  printf
-    "\n==== SUMMARY: %d/%d checks passed ====\n"
-    !pass_count
-    !test_count;
+  expect "TX-format payload is recovered" (List.equal Int.equal result.payload payload);
+  expect_metadata result ~src_port ~dst_port ~payload ~udp_checksum:0 ~src_ip ~dst_ip;
+  printf "\n==== SUMMARY: %d/%d checks passed ====\n" !pass_count !test_count;
   print_endline "\n=== SIMULATION COMPLETE ===";
-  if !pass_count <> !test_count
-  then failwith "IPv4+UDP RX integration failures"
+  if !pass_count <> !test_count then failwith "IPv4+UDP RX integration failures"
+;;
