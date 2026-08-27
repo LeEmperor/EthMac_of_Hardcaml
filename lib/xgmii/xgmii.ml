@@ -79,6 +79,8 @@ let set_lane (word : Signal.t Word.t) ~lane ~byte ~is_control =
   }
 ;;
 
+(* below are some common helpers for constructing idle and error words as they are
+   somewhat annoying to have in the verif suite itself *)
 let idle_word =
   of_lane_bytes (List.init 8 ~f:(Fn.const Control_character.idle)) ~control:0xff
 ;;
