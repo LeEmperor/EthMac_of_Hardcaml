@@ -1,3 +1,19 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "clk_div_legacy_assertion_test.ml" *)
+
+(* Legacy Assertion Test: Clk_div
+
+   Deprecated standalone simulation and manual assertion harness, formerly
+   [test/common/clk_div_tb.ml]. The unit, Quickcheck, and expect suites in this directory
+   supersede it.
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
+*)
+
 open! Core
 open! Hardcaml
 open! Hardcaml_waveterm

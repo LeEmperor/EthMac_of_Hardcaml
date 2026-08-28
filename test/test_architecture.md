@@ -6,6 +6,354 @@ Vocabulary:
     "Test Scenario" = "Test"
 
 
+---
+
+# Settled Conventions
+
+Everything below this heading is decided and in force. Everything after the next `---`
+is still exploratory notes. Source formatting and signal naming live in
+`docs/formatting_guide.md`; this section covers only what that guide does not. The rules here are the
+durable half of what the sweep found; the incidents behind them, and the RTL behavior the
+suites pinned down without changing, are logged in `docs/verif_sweep_findings.md`.
+
+## The four-file suite layout
+
+For DUT `foo` in domain `<d>`, `test/<d>/foo/` holds:
+
+| File | Role |
+| --- | --- |
+| `foo_testbench.ml` | `module Dut = Foo`, the `Observation` / `Output_snapshot` types, `inputs ~...`, `reset`, drivers, scenarios, `run_*` entry points |
+| `foo_unit_quickcheck_tests.ml` | `let%test_unit` examples + `Quickcheck.test` properties, ``~seed:(`Deterministic ...)``, a shrinker where the input type has one |
+| `foo_expect_tests.ml` | `let%expect_test` golden traces via `print_s [%sexp (obs : ...)]` |
+| `foo_legacy_assertion_test.ml` | the superseded harness, if one existed |
+| `dune` | one `(library ... (inline_tests ...))` over the first three modules, plus a separate `(executable)` for the legacy module |
+
+The testbench is the only file that touches `Step` or `Bits`. The other two consume its
+typed observations, which is what keeps a scenario shared between a property test and a
+golden trace instead of written twice.
+
+## `-source-tree-root .` is mandatory in every `(inline_tests)` stanza
+
+```
+(inline_tests
+ (flags
+  (:standard -source-tree-root .)))
+```
+
+ppx_expect v0.18~preview drops the directory from a test file's path when registering
+the test, then rebuilds the path at exit from the bare filename plus `-source-tree-root`,
+yielding `_build/default/<basename>` — which does not exist. The trailing flag wins over
+the one dune passes (`%{workspace_root}`), and `.` points it at the runner's cwd, where
+dune has copied the sources. Copy the explanatory comment along with the flag. Drop both
+if a later ppx_expect fixes the path handling.
+
+## Legacy harnesses are compiled, never run
+
+A superseded `printf`/`exit 1` harness becomes `foo_legacy_assertion_test.ml` in the
+DUT's directory under a bare `(executable)` stanza. `dune build` compiles it, so it keeps
+type-checking against the RTL instead of silently rotting; `dune runtest` never invokes
+it, so its output spam and `exit 1` stay out of CI. It carries the
+`Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]` marker in its header.
+
+A legacy file that is in *no* stanza is not relegated, it is dead — it does not compile
+at all and will drift from the RTL unnoticed.
+
+## `hardcaml_verif` — the shared verification library
+
+`test/common/verif/` → library `hardcaml_verif`. Reach for it before writing a helper.
+
+| Module | Contents |
+| --- | --- |
+| `bits_conv.ml` | `bit : bool -> Bits.t`, `to_bool`, `to_int`, `of_int ~width` |
+| `sim_fixture.ml` | `Make (Dut : S)` → `Sim`, `Step`, `create_simulator`, `run_with_timeout ~timeout ~testbench` |
+| `crc32.ml` | `bit` / `byte` / `bytes` folds over the reflected 0xEDB88320 polynomial, plus `fcs`, `fcs_bytes`, `residue` |
+| `eth_frame.ml` | validated frame record, `create`, `byte_count`, `crc_covered_bytes`, `to_bytes`, `fcs_bytes`, `with_fcs` |
+| `ip_udp.ml` | `Ipv4.header` / `Ipv4.checksum` (ones-complement, end-around carry), `Udp.header`, `hi8` / `lo8` / `w16` |
+| `generators.ml` | `byte`, `byte_list`, `mac_address`, `ipv4_address`, `port`, `payload_length`, `eth_frame` as `Quickcheck.Generator.t` |
+
+Unchanged since phase 0: neither phase 1's five MII suites nor phase 2's four needed
+anything added to it. A helper that only one suite wants belongs in that suite's
+testbench — `uart_tx`'s software receiver stays there, because nothing else speaks UART.
+
+`Crc32` exposes the accumulator two ways and they are not interchangeable: `bytes`
+returns the raw accumulator, which is what `Rx_crc.crc_out` holds and what must equal
+`residue` (`0xDEBB20E3`) once a frame *and its FCS* have both been clocked through;
+`fcs` applies the final inversion and is the word `Tx_crc` emits a byte at a time.
+
+`Sim_fixture` deliberately re-exports `Step` rather than wrapping it — suites keep
+calling `Step.cycle` / `Step.delay` / `Step.O_data` directly. That is also the seam where
+an EventSim backend slots in later as a parallel functor over the same `S`.
+
+## OxCaml: arity is part of the arrow type
+
+Not a style rule — a compile error you will otherwise spend an afternoon on. OxCaml
+encodes function arity in the arrow, so `a -> b -> c` (arity two) and `a -> (b -> c)`
+(arity one, returning a closure) are *different types*. A function that takes a
+`Handler.t @ local` and whose arity is inferred as one lets the local handler escape its
+region, and every call site is rejected with:
+
+```
+Error: This function or one of its parameters escape their region
+       when it is partially applied.
+```
+
+pointing at the caller's lambda, not at the real cause. This bites any helper that
+forwards a step-testbench `~testbench` argument across a module or functor boundary,
+because the inference there has no reason to pick arity two. The fix is to write the
+parameter's type out explicitly and unparenthesized — see `run_with_timeout` in
+`sim_fixture.ml`:
+
+```ocaml
+let run_with_timeout
+  ~timeout
+  ~(testbench : Step.Handler.t @ local -> Step.O_data.t -> 'a)
+  =
+```
+
+Same reasoning applies to any future `Sim_fixture`-like wrapper around `Step.spawn` or
+`Step.wait_for`.
+
+### The other half: a closure over the handler cannot both capture and allocate
+
+`List.map`ing a drive function over a list of stimuli looks like the obvious way to write
+a driver, and it does not compile when the closure returns a record:
+
+```
+Error: The value "handler" is "local" to the parent region
+       but is expected to be "global"
+       ... which is expected to be "global" because it is an allocation
+```
+
+A closure that captures the local handler must itself be local; a closure that allocates
+its result must be global. Wanting both is the error. `List.iter` with a unit-returning
+body is fine — no allocation — which is why `List.iter ... ~f:(fun byte -> ignore
+(drive_byte handler byte : _))` compiles next to a `List.map` that does not.
+
+The fix is the one the phase-1 testbenches already use without saying why: write the
+traversal as an explicit `let rec loop (handler : Step.Handler.t @ local) = function`,
+whose recursive call is a tail call in the handler's own region. For a fixed short
+sequence, a run of `let` bindings works too, and has the side benefit of pinning
+evaluation order — OCaml does not fix the order of a list literal's elements, which
+matters when each element advances the simulation.
+
+## Which side of the clock edge a suite samples
+
+`Step.cycle` hands back both, and the choice is not stylistic — it decides what the
+observation *means*.
+
+- **`after_edge`** is the state the DUT settled into as a result of this cycle's inputs.
+  Sample it when the thing under test is a register or a state the block just entered:
+  `rx_byte_assembler` (`byte_valid` and `byte_out` land together at the edge), `rx_crc`
+  and `tx_crc` (the accumulator including this byte), `rx_datapath`, `rx_controller`.
+- **`before_edge`** is what the block was driving *during* the cycle. Sample it when the
+  outputs are instructions to a combinational consumer, because the byte that goes on the
+  wire this cycle is the one this cycle's outputs select. `tx_controller` is the case:
+  `byte_mux_sel` is `sm.current` and `tx_datapath` muxes off it with no register in
+  between.
+
+A suite that samples `before_edge` usually needs `after_edge` as well — not as an
+observation but as the next state, so the driver can choose the following cycle's
+stimulus. That is what makes `tx_controller`'s driver a loop that follows the DUT's own
+state rather than a fixed script, and it is worth copying: a fixed script silently stops
+testing anything the moment the FSM's timing changes.
+
+A purely combinational DUT has no such choice — both sides agree. `tx_datapath` asserts
+exactly that rather than assuming it, so a registered stage cannot be added there without
+a test noticing.
+
+A block that is combinational in the *current input* and a registered copy of it is the
+third case, and there `after_edge` is not merely the wrong choice — it is
+information-free. `Helper_circuits`' edge detectors are `~:x_d &: x`; at `after_edge` the
+register has already taken this cycle's input, so `x_d = x` and both detectors read zero
+whatever the input did. A suite sampling there sees an all-false column and can still
+pass a carelessly written test. `helper_circuits` asserts the degeneracy outright.
+`uart_tx` lands in the same place by a different route: its line is an
+`Always.Variable.wire` driven off the current state, so `after_edge` reports the *next*
+symbol and shifts the whole frame by one.
+
+One more, for `before_edge` specifically: a synchronous clear's effect appears on the
+cycle *after* the clear, not during it — while the clear is being applied the registers
+still hold their old contents. The obvious assertion ("nothing survives from the clear
+onward") is off by one.
+
+## Goldens for one-bit-per-cycle behavior are waveform rows, not sexps
+
+A sexp list of records is the right golden when the observation is structured. When it is
+one bit per cycle, it is not: the reviewable claim about a clock divider, a heartbeat
+pulse, or an edge detector is an *alignment* — which cycle the pulse lands on, how far the
+delayed copy trails — and stacked character rows show that where a list of booleans does
+not. `clk_div` and `second_pulse` print a single row; `helper_circuits` prints one
+labelled row per output with the input row on top. Keep one sexp golden per suite anyway,
+over a short scenario, so the typed record itself stays visible.
+
+## Wide values print in hex, in a `Compact_observation`
+
+A 32-bit accumulator rendered as `3736805603` is not reviewable against a standard that
+quotes `0xDEBB20E3`. Suites whose observations carry wide values keep the typed
+`Observation.t` in `int` — that is what `[%test_result]` compares — and give
+`Compact_observation.t` `string` fields formatted with `sprintf "0x%08x"`, which is what
+the goldens print. The same record is where the boolean control lines collapse into an
+`active_outputs : string list`.
+
+## Hardcaml `mux` saturates on an out-of-range select
+
+It returns the *last* element, not a wrap and not an error. A software model of a mux
+must clamp its index the same way (`List.nth_exn values (Int.min index (length - 1))`) or
+it will disagree with the RTL on every out-of-range combination. `tx_datapath` drives
+`mac_byte_sel` across all eight values against six-entry MAC lists precisely to freeze
+this.
+
+## A DUT with an optional `create` argument cannot be `include`d
+
+`Sim_fixture.S` wants `val create : Scope.t -> Signal.t I.t -> Signal.t O.t`, and OxCaml
+will not erase an optional argument to match it. `Tx_datapath.create` takes
+`?ethertype`, so its fixture spells the signature out:
+
+```ocaml
+module Fixture = Sim_fixture.Make (struct
+    module I = Dut.I
+    module O = Dut.O
+
+    let create scope inputs = Dut.create ~ethertype:Config.ethertype scope inputs
+    let name = "Tx_datapath"
+  end)
+```
+
+Wrapping that in a `Make_testbench (Config : sig val ethertype : int end)` functor lets
+one suite instantiate the same DUT at two parameter values. That is not a workaround, it
+is the point: `tx_datapath`'s default ethertype is `0x9999`, whose two bytes are equal, so
+a byte-order fault in the ethertype mux is invisible until a second instance runs at
+`0x0800`. Look for the same trap in any block whose defaults are palindromic.
+
+`second_pulse` uses the same shape for a different reason — its `?clk_freq` defaults to
+100 MHz, one pulse every hundred million cycles, which no simulation reaches — and adds
+the trick worth copying: the `Observation` and summary types are declared **outside** the
+functor, so every instantiation produces the same type and one list of runner records can
+carry all six. A property then runs across the whole set instead of being written out per
+parameter value.
+
+Choose the parameter values so they disagree about something. `second_pulse` runs at 3, 4,
+5, 8, 10 and 16: at a power of two the terminal count coincides with the counter's natural
+wrap, and a counter that rolled on the wrap rather than on the compare would pass every
+power-of-two instance. `tx_datapath`'s palindromic default is the same hazard.
+
+## A module of plain `Signal.t` functions needs a wrapper DUT
+
+`lib/common/helper_circuits.ml` exports `Signal.t -> Signal.t` functions over a
+`Reg_spec.t`, not an `I` / `O` / `create` triple, so there is nothing for
+`Sim_fixture.Make` to instantiate. Define a wrapper `module Dut` inside the suite's own
+testbench, with one input per argument and one output per function, and instantiate every
+function against a shared spec.
+
+Instantiate them *together*, not one wrapper per function. `rising_edge_delayed` is by
+definition `delay_by n (rising_edge_detector x)`, and that definition is only checkable if
+both are visible in the same simulation — which is the difference between testing the
+composition and re-implementing it in the model.
+
+Mechanical trap: a circuit output cannot be an input port directly, and
+`delay_by spec ~n_cycles:0 x` returns `x` itself. Wrap it in `wireof` or the DUT will not
+elaborate. Give it an output anyway — it is the recursion's base case and the only place
+the identity is checkable.
+
+## Prefer a protocol-level oracle to a cycle-level one
+
+Where the DUT speaks a protocol, model the *receiver*, not the timing. `uart_tx`'s oracle
+is `Uart_receiver.decode`, which reconstructs a byte from the symbols the fixture sampled
+exactly as a real receiver would; the headline property is a round trip and is indifferent
+to how the transmitter chooses to time itself. Running it across tick spacings and enable
+stalls is what turns "it emitted the right waveform once" into "it is tick-driven".
+
+Two supporting habits from that suite:
+
+- **A symbol is an interval, not a sample.** The fixture records the line on every cycle
+  between two ticks and rejects a symbol whose line moved mid-interval. A single mid-bit
+  sample would accept a transmitter that glitched between ticks; a real receiver sampling
+  at its own phase would not.
+- **Keep the decoder total.** An unexpected symbol count or an unstable symbol comes back
+  *in the record* rather than raising, so a failing property prints what the line actually
+  did instead of a backtrace from inside the model.
+
+## Expect tests: promote, then read
+
+Write `[%expect {| |}]` empty, run `dune runtest`, then `dune promote` — **and then read
+the promoted output against the RTL's intended behavior before committing.** A golden
+freezes current behavior; blind promotion enshrines a bug as the specification. Where a
+legacy assertion harness asserted a specific value, cross-check the new golden against
+that assertion before relegating the legacy file.
+
+Keep goldens short. A 400-line trace is not a reviewable diff — put the long
+frame-level scenarios in `let%test_unit` cases and leave one or two representative
+frames in the expect file.
+
+## Formatting and verification
+
+Per the formatting guide's section 9, and in this order:
+
+```sh
+./scripts/with-switch.sh dune build @fmt     # scope to a dir: @<dir>/fmt --auto-promote
+./scripts/with-switch.sh dune build @lint
+./scripts/with-switch.sh dune build          # must be clean, legacy executables included
+./scripts/with-switch.sh dune runtest        # must be green with no expect diffs
+```
+
+Much of `lib/` and the untranslated `test/` tbs are not formatter-clean at baseline, so a
+bare `dune build @fmt` reports a wall of pre-existing diffs. Promote per directory
+(`dune build @test/mii/foo/fmt --auto-promote`) rather than running `dune fmt` across the
+repo, or a suite's diff will arrive buried in unrelated reflows.
+
+### Disabling the formatter: use the floating pair, never the item attribute
+
+This ocamlformat rejects `[@@ocamlformat "disable"]` outright, wherever it is attached:
+
+```
+Error: Invalid ocamlformat attribute. Ocamlformat can only be disabled at toplevel
+(e.g [@@@ocamlformat "disable"])
+```
+
+It is an **error**, not a warning, and it fails `dune build @lint` — which is how five
+phase-0 files sat with a red lint alias while the plan recorded it as green. Bracket the
+hand-aligned run instead:
+
+```ocaml
+[@@@ocamlformat "disable"]
+
+let create
+  ?(preamble_length     = 7)
+  ...
+;;
+[@@@ocamlformat "enable"]
+```
+
+Both forms work inside a `struct`, indented to the enclosing level. Close every `disable`
+with an `enable`: an unclosed one silently exempts the rest of the file.
+
+### An empty `(**)` makes ocamlformat refuse the whole file
+
+`ocamlformat: ignoring "<file>" (misplaced documentation comments - warning 50)` — the
+file is skipped entirely and `@fmt` stays red no matter how many times it is promoted.
+`(**)` is an empty *doc* comment the compiler cannot attach to anything. Write `(* *)`,
+or say something.
+
+## Deferred, on purpose
+
+- **Alcotest.** The "longer more thought out tests → proper suites" idea below is on hold
+  pending confirmation from a Jane Street dev that Alcotest is the right vehicle rather
+  than plain `let%test_unit` suites. `test/udp/udp_alcotest_lib.ml` and the `alcotest`
+  dep stay in place, untouched. If the answer is yes the retro-fit is purely additive: a
+  fourth file `foo_integration_tests.ml` per integration dir, reusing the same
+  `foo_testbench.ml`.
+- **EventSim.** `hardcaml_event_driven_sim` and
+  `Hardcaml_step_testbench.Functional.Event_driven_sim` are both installed in the switch,
+  and the portable-equivalence idea below still stands, but no EventSim suites are
+  written yet. `Sim_fixture` is shaped to accept a second backend when they are.
+- **`_i` / `_o` port rename.** The formatting guide's section 3 requires it; no current
+  `lib/` module complies. Testbenches bind to the port names that exist today. A later
+  rename sweep of `lib/` would touch the `inputs ~...` and `snapshot` functions of every
+  suite.
+
+---
+
+
 # Test Scenario - Agnostic, Backend-neutral
 Does JS call these "test scenarios" or can I refer to them as tests as UVM does?
 
