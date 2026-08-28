@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler_expect_tests.ml" *)
 
 (* Expect Test Suite: Tx_byte_disassembler
 
@@ -59,9 +60,7 @@ let%expect_test "reset while busy discards the interrupted byte" =
 (* test 4 : donald *)
 let%expect_test "a valid pulse while busy is ignored" =
   let observation =
-    Testbench.run_valid_pulse_while_busy
-      ~accepted_byte:0xAB
-      ~offered_while_busy:0x4D
+    Testbench.run_valid_pulse_while_busy ~accepted_byte:0xAB ~offered_while_busy:0x4D
   in
   print_s [%sexp (observation : Busy_valid_observation.t)];
   [%expect
