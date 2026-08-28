@@ -41,7 +41,9 @@ let%test_unit "a falling edge is detected on the cycle the input goes low" =
 
 let%test_unit "the detectors are one-cycle pulses, never levels" =
   (* The consumers gate on these for exactly one cycle; a detector that stayed high for
-     the duration of the level would double-count every event downstream. *)
+     the duration of the level would double-count every event downstream. Clear-free: a
+     clear landing on a rise widens the pulse to two cycles, which is asserted separately
+     below. *)
   let xs = Testbench.square_wave ~half_period:4 ~num_periods:3 in
   let observations = Testbench.run_stimuli xs in
   List.iter
@@ -142,6 +144,65 @@ let%test_unit "a clear flushes the delay line" =
   List.iter after_clear ~f:(fun observation ->
     [%test_result: bool] observation.Observation.delayed_1 ~expect:false;
     [%test_result: bool] observation.Observation.delayed_n ~expect:false)
+;;
+
+(* The cycles an output pulses on. The clear cases below ask "how many pulses, and where",
+   which a whole-column comparison answers less directly than a list of indices. *)
+let pulse_cycles observations ~f =
+  List.filter_mapi observations ~f:(fun index observation ->
+    if f observation then Some index else None)
+;;
+
+let clear_case ~before ~after ~clear ~f =
+  pulse_cycles
+    (Testbench.run_scheduled (Testbench.edge_with_clear ~before ~after ~clear ~tail:5))
+    ~f
+;;
+
+let%test_unit "a falling edge coincident with a clear is lost" =
+  (* RTL-6. The detector is combinational, so [falling] is high during the clear cycle -
+     but the delay chain behind it carries the same spec and is cleared on that same edge,
+     so the pulse never reaches [falling_delayed]. The clear-free control is half the
+     test: an assertion that the clear case emits nothing is also satisfied by an output
+     tied to zero, or by a stimulus with no edge in it. *)
+  [%test_result: int list]
+    (clear_case ~before:true ~after:false ~clear:false ~f:Observation.falling_delayed)
+    ~expect:[ Testbench.edge_cycle + edge_delay_depth ];
+  [%test_result: int list]
+    (clear_case ~before:true ~after:false ~clear:true ~f:Observation.falling_delayed)
+    ~expect:[];
+  [%test_result: int list]
+    (clear_case ~before:true ~after:false ~clear:true ~f:Observation.falling)
+    ~expect:[ Testbench.edge_cycle ]
+;;
+
+let%test_unit "a rising edge coincident with a clear is deferred one cycle, not lost" =
+  (* The other half of RTL-6, and the half the finding did not say: a rise is not lost the
+     way a fall is. The clear zeroes the detector's history register, so on the next cycle
+     a still-high input is compared against zero and reads as a fresh rise, which the
+     delay chain then carries normally. A consumer of [rising_edge_delayed] whose input
+     stays asserted across its own reset gets a late strobe, not a missing one - and
+     exactly one, because the clear kills the first of the detector's two pulses on the
+     same edge that produces the second. *)
+  [%test_result: int list]
+    (clear_case ~before:false ~after:true ~clear:false ~f:Observation.rising_delayed)
+    ~expect:[ Testbench.edge_cycle + edge_delay_depth ];
+  [%test_result: int list]
+    (clear_case ~before:false ~after:true ~clear:true ~f:Observation.rising_delayed)
+    ~expect:[ Testbench.edge_cycle + edge_delay_depth + 1 ]
+;;
+
+let%test_unit "a clear widens a rise to two cycles and swallows a fall" =
+  (* The mechanism the two cases above share, asserted on the plain detectors so that a
+     reader who finds one of them failing can tell which half moved. This is also the
+     exception to "the detectors are one-cycle pulses": that property holds clear-free,
+     and a consumer counting pulses across a clear sees two. *)
+  [%test_result: int list]
+    (clear_case ~before:false ~after:true ~clear:true ~f:Observation.rising)
+    ~expect:[ Testbench.edge_cycle; Testbench.edge_cycle + 1 ];
+  [%test_result: int list]
+    (clear_case ~before:true ~after:false ~clear:true ~f:Observation.falling)
+    ~expect:[ Testbench.edge_cycle ]
 ;;
 
 let%test_unit "after_edge is degenerate for the detectors" =

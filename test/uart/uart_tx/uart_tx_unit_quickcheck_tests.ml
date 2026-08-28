@@ -118,9 +118,14 @@ let%test_unit "the transmitter returns to idle and does not send a second frame"
   List.iter frame.trailing_line ~f:(fun value -> [%test_result: bool] value ~expect:true)
 ;;
 
-let%test_unit "keep is tied low" =
-  List.iter (Testbench.run_keep ~num_cycles:12 0xFF) ~f:(fun value ->
-    [%test_result: bool] value ~expect:false)
+let%test_unit "keep depends on the internals rather than being tied off" =
+  (* [keep] exists to stop synthesis pruning the bit counter and the state; it was tied to
+     [zero 1], which retains nothing. Both halves are needed to say that it is not a
+     constant: it is low while nothing has moved, and high once something has. *)
+  let { Keep_trace.idle; frame } = Testbench.run_keep ~num_idle:4 ~num_frame:14 0xFF in
+  List.iter idle ~f:(fun value ->
+    [%test_result: bool] value ~expect:false ~message:"idle after reset");
+  [%test_result: bool] (List.exists frame ~f:Fn.id) ~expect:true ~message:"in flight"
 ;;
 
 let%test_unit "random bytes round-trip" =

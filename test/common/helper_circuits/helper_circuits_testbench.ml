@@ -26,6 +26,13 @@
    reports both so the Quickcheck suite can pin that degeneracy rather than leave it as
    folklore.
 
+   The clear. It is stimulus here, not just setup. [run_with_clear] applies one between
+   two clear-free runs, which shows the delay line flushing; [run_scheduled] takes the
+   clear line per cycle so it can land on the same cycle as an edge, which is the case
+   RTL-6 is about and the case a fixed-shape driver cannot express. Every coincident-clear
+   scenario is run twice, with the clear and without, because "no delayed pulse appeared"
+   is a claim only the clear-free control turns into evidence.
+
    Tags: [{ "ACTIVE" ; "TEST" ; "TESTBENCH" ; "COMMON_ITEMS" }]
 *)
 
@@ -279,6 +286,40 @@ module Testbench = struct
     run_with_timeout
       ~timeout:(10 + List.length xs_before + List.length xs_after)
       ~testbench
+  ;;
+
+  (* The clear line as part of the stimulus, one [(clear, x)] pair per cycle.
+     [run_with_clear] has a fixed shape - a clear-free run, one clear cycle with [x] low,
+     a clear-free tail - which cannot place a clear on the same cycle as an edge in the
+     input. That coincidence is the whole of RTL-6, so it needs a driver that can express
+     it, and the clear-free control it has to be compared against. *)
+  let run_scheduled stimuli =
+    let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+      let rec loop (handler : Step.Handler.t @ local) = function
+        | [] -> []
+        | (clear, x) :: remaining ->
+          let output =
+            Step.cycle handler (inputs ~clear ~x ()) |> Step.O_data.before_edge
+          in
+          snapshot ~x output :: loop handler remaining
+      in
+      reset handler;
+      loop handler stimuli
+    in
+    run_with_timeout ~timeout:(8 + List.length stimuli) ~testbench
+  ;;
+
+  (* The cycle the edge lands on in [edge_with_clear] below. Two cycles of the starting
+     level first, so the detector's history register holds it before the edge. *)
+  let edge_cycle = 2
+
+  (* An edge from [before] to [after] on cycle [edge_cycle], with the clear line asserted
+     on that same cycle or not. One description for both the case and its control, so the
+     control cannot drift from what it controls. *)
+  let edge_with_clear ~before ~after ~clear ~tail =
+    List.init edge_cycle ~f:(fun _ -> false, before)
+    @ [ clear, after ]
+    @ List.init tail ~f:(fun _ -> false, after)
   ;;
 
   (* The word helpers, driven one word per cycle. Purely combinational, so [before_edge]

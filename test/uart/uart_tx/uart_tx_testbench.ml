@@ -124,6 +124,15 @@ module Uart_receiver = struct
   ;;
 end
 
+(* [keep] sampled either side of a launch: the idle stretch after reset, then the frame. *)
+module Keep_trace = struct
+  type t =
+    { idle : bool list
+    ; frame : bool list
+    }
+  [@@deriving sexp, equal, compare]
+end
+
 module Testbench = struct
   module Fixture = Sim_fixture.Make (struct
       include Dut
@@ -262,27 +271,39 @@ module Testbench = struct
     run_with_timeout ~timeout:(8 + num_cycles) ~testbench
   ;;
 
-  (* [keep] is the module's synthesis anti-pruning output and is tied to zero here, unlike
-     the MII blocks where it OR-reduces real internals. Worth freezing: a later edit that
-     starts driving it would change what synthesis retains. *)
-  let run_keep ~num_cycles byte =
+  (* [keep] is the module's synthesis anti-pruning output: an OR-reduce of the bit counter
+     and the FSM state, in the shape the MII blocks use, so neither internal is pruned out
+     of the netlist or the VCD.
+
+     It is not a status line, and reading it as one is the mistake to avoid: it is high
+     whenever either internal is non-zero, so it goes high on the first frame and stays
+     high forever after, because the bit counter rests at seven rather than returning to
+     zero. What is worth freezing is that it depends on the internals at all - it was tied
+     to [zero 1] before, and a tie-off retains nothing. *)
+  let run_keep ~num_idle ~num_frame byte =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
-      reset handler;
-      let rec loop (handler : Step.Handler.t @ local) remaining =
+      let sample (handler : Step.Handler.t @ local) ~tick ~d_in_valid =
+        Step.cycle handler (inputs ~rst:false ~en:true ~tick ~d_in:byte ~d_in_valid)
+        |> Step.O_data.before_edge
+        |> fun output -> Bits.to_bool output.Dut.O.keep
+      in
+      let rec loop (handler : Step.Handler.t @ local) remaining ~tick ~d_in_valid =
         if remaining = 0
         then []
         else (
-          let output =
-            Step.cycle
-              handler
-              (inputs ~rst:false ~en:true ~tick:true ~d_in:byte ~d_in_valid:true)
-            |> Step.O_data.before_edge
-          in
-          Bits.to_bool output.Dut.O.keep :: loop handler (remaining - 1))
+          let value = sample handler ~tick ~d_in_valid in
+          value :: loop handler (remaining - 1) ~tick ~d_in_valid)
       in
-      loop handler num_cycles
+      reset handler;
+      (* No request at all: the counter has not moved and the state is IDLE. *)
+      let idle = loop handler num_idle ~tick:false ~d_in_valid:false in
+      (* The launch cycle, then one tick per cycle so a symbol is a cycle and the whole
+         frame fits in the window. *)
+      let launch = sample handler ~tick:false ~d_in_valid:true in
+      let frame = loop handler (num_frame - 1) ~tick:true ~d_in_valid:false in
+      { Keep_trace.idle; frame = launch :: frame }
     in
-    run_with_timeout ~timeout:(8 + num_cycles) ~testbench
+    run_with_timeout ~timeout:(8 + num_idle + num_frame) ~testbench
   ;;
 end
 
@@ -294,4 +315,12 @@ let frame_to_string ({ leading_line; symbols; trailing_line } : Frame.t) =
   String.concat
     ~sep:" "
     ((idle leading_line :: List.map symbols ~f:Symbol.to_string) @ [ idle trailing_line ])
+;;
+
+(* Golden rendering: the keep line, idle stretch and frame separated. *)
+let keep_trace_to_string ({ idle; frame } : Keep_trace.t) =
+  let render values =
+    String.of_list (List.map values ~f:(fun high -> if high then '1' else '0'))
+  in
+  sprintf "idle %s | frame %s" (render idle) (render frame)
 ;;

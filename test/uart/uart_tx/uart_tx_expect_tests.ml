@@ -75,3 +75,20 @@ let%expect_test "the decoded frame, in full" =
      (stop_bit true) (byte (150)) (unstable_symbols ()))
     |}]
 ;;
+
+let%expect_test "the FSM states, in full" =
+  (* Every state here is reachable. An enumerated state that no transition targets - there
+     was one, [DONE] - is dead weight a reader has to rule out, and it also has no arm in
+     the output switch, so it would fall through to the mark default if it were ever
+     reached. *)
+  print_s [%sexp (Dut.States.all : Dut.States.t list)];
+  [%expect {| (IDLE START PAYLOAD STOP) |}]
+;;
+
+let%expect_test "keep across an idle stretch and a frame" =
+  (* Not a status line: [keep] is an OR-reduce of the bit counter and the state, so it
+     rises with the frame and stays high afterwards - the counter rests at seven rather
+     than returning to zero. *)
+  printf "%s\n" (keep_trace_to_string (Testbench.run_keep ~num_idle:4 ~num_frame:14 0x55));
+  [%expect {| idle 0000 | frame 01111111111111 |}]
+;;
