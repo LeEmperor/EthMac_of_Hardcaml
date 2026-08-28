@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler_testbench.ml" *)
 
 (* Testbench Support: "Tx_byte_disassembler"
 
@@ -11,6 +12,7 @@ open! Hardcaml
 open! Signal
 open! Mii_of_hardcaml
 open! Hardcaml_step_testbench
+open! Hardcaml_verif
 module Dut = Tx_byte_disassembler
 
 (* A raw view of the output pins at one sampling point. *)
@@ -58,8 +60,14 @@ module Busy_valid_observation = struct
 end
 
 module Testbench = struct
-  module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
-  module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
+  module Fixture = Sim_fixture.Make (struct
+      include Dut
+
+      let name = "Tx_byte_disassembler"
+    end)
+
+  module Sim = Fixture.Sim
+  module Step = Fixture.Step
 
   (* should become a common library highkey - i keep saying that and then pushing it off:
      #techdebt lmao *)
@@ -73,7 +81,7 @@ module Testbench = struct
     ;;
   end
 
-  let bit value = if value then Bits.vdd else Bits.gnd
+  let bit = Bits_conv.bit
 
   let inputs ~reset ~en ~byte_in ~byte_in_valid =
     { Step.input_hold with
@@ -142,19 +150,8 @@ module Testbench = struct
     loop handler bytes
   ;;
 
-  let create_simulator () =
-    let scope =
-      Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true ()
-    in
-    Sim.create (Dut.create scope)
-  ;;
-
-  let run_with_timeout ~timeout ~testbench =
-    let simulator = create_simulator () in
-    match Step.run_with_timeout ~timeout () ~simulator ~testbench with
-    | Some result -> result
-    | None -> failwith "Tx_byte_disassembler testbench timed out"
-  ;;
+  let create_simulator = Fixture.create_simulator
+  let run_with_timeout = Fixture.run_with_timeout
 
   let run_bytes bytes =
     run_with_timeout ~timeout:(4 + (2 * List.length bytes)) ~testbench:(scenario ~bytes)
