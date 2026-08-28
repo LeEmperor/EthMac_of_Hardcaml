@@ -8,9 +8,14 @@
 
    The contract has three parts and each gets its own property: the pulse is one cycle
    wide, it fires every [clk_freq] cycles, and a clear restarts the phase rather than
-   merely suppressing one pulse. All three are checked at six divide values, including
+   merely suppressing one pulse. All three are checked at eight divide values, including
    both powers of two and non-powers, so a counter that rolled on its natural wrap rather
    than on the terminal compare cannot pass.
+
+   The domain has ends, and they are asserted here too: [clk_freq = 1] is legal and
+   degenerate (every cycle is a period, so the pulse never goes low), and anything below
+   it is refused at elaboration by name rather than as a zero-width register error. See
+   findings RTL-4.
 
    Tags: [{ "ACTIVE" ; "TEST" ; "QUICKCHECK" ; "UNIT_TEST" }]
 *)
@@ -51,16 +56,54 @@ let%test_unit "the first pulse lands on cycle clk_freq, not clk_freq - 1 or + 1"
       ~message:(sprintf "clk_freq = %d" clk_freq))
 ;;
 
+let longest_pulse_run observations =
+  List.fold observations ~init:(0, 0) ~f:(fun (longest, current) observation ->
+    let current = if observation.Observation.pulse then current + 1 else 0 in
+    Int.max longest current, current)
+  |> fst
+;;
+
 let%test_unit "the pulse is exactly one cycle wide" =
   List.iter runners ~f:(fun { clk_freq; run_stimuli } ->
-    let observations = run_stimuli (List.init (4 * clk_freq) ~f:(fun _ -> false)) in
-    let longest_run =
-      List.fold observations ~init:(0, 0) ~f:(fun (longest, current) observation ->
-        let current = if observation.Observation.pulse then current + 1 else 0 in
-        Int.max longest current, current)
-      |> fst
-    in
-    [%test_result: int] longest_run ~expect:1 ~message:(sprintf "clk_freq = %d" clk_freq))
+    (* At [clk_freq = 1] every cycle is its own period, so "one cycle high per period" and
+       "never two highs in a row" stop being the same statement and only the first holds.
+       The expected run length is written from the period rather than fixed at one so the
+       degenerate end is covered by the property instead of excused from it. *)
+    let num_cycles = 4 * clk_freq in
+    let observations = run_stimuli (List.init num_cycles ~f:(fun _ -> false)) in
+    [%test_result: int]
+      (longest_pulse_run observations)
+      ~expect:(if clk_freq = 1 then num_cycles else 1)
+      ~message:(sprintf "clk_freq = %d" clk_freq))
+;;
+
+let%test_unit "clk_freq = 1 pulses on every cycle" =
+  (* The degenerate end, stated positively rather than as an exception in the property
+     above: a clock whose period is a second makes every cycle a second. This
+     instantiation only elaborates because the counter width is floored at one bit, so it
+     is also the case that fails first if that floor is ever dropped. *)
+  let observations = Freq_1.run_free ~num_cycles:6 in
+  [%test_result: bool list]
+    (List.map observations ~f:(fun observation -> observation.Observation.pulse))
+    ~expect:(List.init 6 ~f:(fun _ -> true))
+;;
+
+let%test_unit "illegal clk_freqs are rejected at elaboration" =
+  (* The floor is the only guard - there is no power-of-two requirement here - so zero and
+     the negatives are the whole illegal set. *)
+  List.iter illegal_clk_freqs ~f:(fun clk_freq ->
+    match elaborate clk_freq with
+    | Error _ -> ()
+    | Ok () -> raise_s [%message "clk_freq was accepted" (clk_freq : int)])
+;;
+
+let%test_unit "the smallest legal frequencies elaborate" =
+  List.iter smallest_legal_clk_freqs ~f:(fun clk_freq ->
+    Or_error.ok_exn (elaborate clk_freq))
+;;
+
+let%test_unit "every swept frequency elaborates" =
+  List.iter runners ~f:(fun { clk_freq; _ } -> Or_error.ok_exn (elaborate clk_freq))
 ;;
 
 let%test_unit "a clear restarts the phase" =

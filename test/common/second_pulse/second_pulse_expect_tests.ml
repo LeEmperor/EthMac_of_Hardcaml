@@ -6,7 +6,9 @@
 
    Golden traces of the pulse position. The waveform row is the point: the reviewable
    claim about this block is "one cycle high, [clk_freq - 1] cycles low, forever", and a
-   row of characters says that where a list of booleans does not.
+   row of characters says that where a list of booleans does not. The bottom group is the
+   floor of the domain - the row at [clk_freq = 1], where the low phase has no cycles left
+   in it, and the message [create] raises below that. See findings RTL-4.
 
    Tags: [{ "ACTIVE" ; "TEST" ; "EXPECT_TEST" }]
 *)
@@ -67,5 +69,36 @@ let%expect_test "the observation record, in full, across one period" =
     {|
     (((rst false) (pulse false)) ((rst false) (pulse false))
      ((rst false) (pulse true)) ((rst false) (pulse false)))
+    |}]
+;;
+
+(* The floor of the domain, one row per frequency, so the low phase can be watched
+   shrinking to nothing. [clk_freq = 1] is the case RTL-4 was filed against: the counter
+   width is [ceil_log2 1 = 0] before the floor, so this row did not exist at all until
+   [Second_pulse.counter_width] gained its [Int.max 1]. *)
+let%expect_test "the smallest frequencies, down to a pulse every cycle" =
+  List.iter [ Freq_1.run_free; Freq_2.run_free; Freq_3.run_free ] ~f:(fun run ->
+    print_trace (run ~num_cycles:12));
+  [%expect {|
+    ||||||||||||
+    .|.|.|.|.|.|
+    ..|..|..|..|
+    |}]
+;;
+
+(* The rejection message itself, not just the fact of a rejection. Zero is the case worth
+   reading: [Int.ceil_log2] would otherwise raise about its own argument, from inside
+   Core, with nothing in the message tying it to a frequency. *)
+let%expect_test "illegal frequencies are rejected by name" =
+  List.iter illegal_clk_freqs ~f:(fun clk_freq ->
+    match elaborate clk_freq with
+    | Ok () -> printf "%5d  accepted\n" clk_freq
+    | Error error -> printf "%5d  %s\n" clk_freq (Error.to_string_mach error));
+  [%expect
+    {|
+    -100  ("Second_pulse.create: clk_freq must be at least 1"(clk_freq -100))
+      -4  ("Second_pulse.create: clk_freq must be at least 1"(clk_freq -4))
+      -1  ("Second_pulse.create: clk_freq must be at least 1"(clk_freq -1))
+       0  ("Second_pulse.create: clk_freq must be at least 1"(clk_freq 0))
     |}]
 ;;

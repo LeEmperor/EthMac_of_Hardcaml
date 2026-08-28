@@ -18,7 +18,11 @@
    counter is [Int.ceil_log2 clk_freq] bits wide, so a power of two makes the terminal
    count and the counter's natural wrap coincide, and a bug that reset on the wrap rather
    than on the compare would be invisible. 4, 8 and 16 are powers of two; 3, 5 and 10 are
-   not and leave unused counter values above the terminal count.
+   not and leave unused counter values above the terminal count. 1 is the degenerate end
+   of the domain, added with the RTL-4 fix: every cycle is a period there, so the pulse is
+   high continuously and the "one cycle wide" shape the other five share does not apply.
+   It is in [runners] rather than off to the side because that is where a width formula
+   that lost its floor fails first.
 
    Sampling. Both [pulse] and the counter are registered, so [after_edge] is the pulse the
    cycle just driven produced. That is the convention the other register-output suites
@@ -155,6 +159,16 @@ struct
   ;;
 end
 
+(* The degenerate end: [ceil_log2 1] is zero, so this instantiation only elaborates
+   because [Second_pulse.counter_width] floors the width at one bit. See findings RTL-4. *)
+module Freq_1 = Make_testbench (struct
+    let clk_freq = 1
+  end)
+
+module Freq_2 = Make_testbench (struct
+    let clk_freq = 2
+  end)
+
 module Freq_3 = Make_testbench (struct
     let clk_freq = 3
   end)
@@ -190,11 +204,40 @@ type runner =
   }
 
 let runners =
-  [ { clk_freq = Freq_3.clk_freq; run_stimuli = Freq_3.run_stimuli }
+  [ { clk_freq = Freq_1.clk_freq; run_stimuli = Freq_1.run_stimuli }
+  ; { clk_freq = Freq_2.clk_freq; run_stimuli = Freq_2.run_stimuli }
+  ; { clk_freq = Freq_3.clk_freq; run_stimuli = Freq_3.run_stimuli }
   ; { clk_freq = Freq_4.clk_freq; run_stimuli = Freq_4.run_stimuli }
   ; { clk_freq = Freq_5.clk_freq; run_stimuli = Freq_5.run_stimuli }
   ; { clk_freq = Freq_8.clk_freq; run_stimuli = Freq_8.run_stimuli }
   ; { clk_freq = Freq_10.clk_freq; run_stimuli = Freq_10.run_stimuli }
   ; { clk_freq = Freq_16.clk_freq; run_stimuli = Freq_16.run_stimuli }
   ]
+;;
+
+(* Frequencies with no reading as "cycles per second". Zero and the negatives are the
+   whole illegal set: unlike [clk_div]'s divisor there is no power-of-two requirement, so
+   the floor is the only guard and one is a legal value rather than the first rejected
+   one. *)
+let illegal_clk_freqs = [ -100; -4; -1; 0 ]
+
+(* The smallest legal frequencies, the ones the width formula's floor is about. 1 is the
+   case RTL-4 was filed against; 2 and 3 elaborated even before the fix and are here so a
+   regression that moved the floor the wrong way is distinguishable from one that removed
+   it. *)
+let smallest_legal_clk_freqs = [ 1; 2; 3 ]
+
+(* Elaboration only - no simulator, because the point is whether [create] will build the
+   circuit at all. Returns the exception so a suite can pin the message rather than only
+   the fact that something was raised. *)
+let elaborate clk_freq =
+  Or_error.try_with (fun () ->
+    let scope = Scope.create ~flatten_design:true () in
+    let (_ : Signal.t Dut.O.t) =
+      Dut.create
+        ~clk_freq
+        scope
+        { Dut.I.clk = Signal.input "clk" 1; rst = Signal.input "rst" 1 }
+    in
+    ())
 ;;
