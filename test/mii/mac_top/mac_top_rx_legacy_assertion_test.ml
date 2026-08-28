@@ -1,4 +1,7 @@
+(* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "mac_top_rx_legacy_assertion_test.ml" *)
+(* Superseded MAC RX assertion harness. Tags: [{ "DEPRECATED" ; "TEST" }] *)
 
 (* Executable: "rx_path_tb.ml"
 

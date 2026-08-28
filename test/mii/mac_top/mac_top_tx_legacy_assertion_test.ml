@@ -1,5 +1,7 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "mac_top_tx_legacy_assertion_test.ml" *)
+(* Superseded MAC TX assertion harness. Tags: [{ "DEPRECATED" ; "TEST" }] *)
 
 (*
  * Testbench: TX MAC top-level integration test
