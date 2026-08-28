@@ -43,6 +43,10 @@
    0x0000 (checksum disabled) so this is inert for now. See TODO below and
    IPV4_LAYER_SPLIT_PLAN.md.
 
+   [en] is a global clock-enable for this block. While low, all state and datapath
+   registers hold, input ready and output valid are low, and stream/status pulses are
+   suppressed. The upstream source must hold its current beat until [en] returns.
+
    Endpoints are NOT parameterized as addresses (an RX parser reports whatever arrives);
    [Make(Config)] carries only the port-filter policy + debug knobs.
 *)
@@ -172,8 +176,9 @@ module Make (C : Config) = struct
     let open Always in
     let open Variable in
     let rising_edge = Reg_spec.create ~clock:i.I.clock ~clear:i.I.reset () in
-    let sm = State_machine.create (module States) ~enable:vdd rising_edge in
-    let r = I_Regs.Of_always.reg ~enable:vdd rising_edge in
+    let en = i.I.en in
+    let sm = State_machine.create (module States) ~enable:en rising_edge in
+    let r = I_Regs.Of_always.reg ~enable:en rising_edge in
     I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) r;
     let w = I_Wires.Of_always.wire Signal.zero in
     I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) w;
@@ -301,12 +306,12 @@ module Make (C : Config) = struct
            @ [ r.crc_err.value; r.busy.value ])
       else gnd
     in
-    { O.m_axis_tready = w.m_ready.value
+    { O.m_axis_tready = en &: w.m_ready.value
     ; m_tdata = i.I.rx_tdata
-    ; m_tvalid = w.tvalid.value
-    ; m_tlast = w.tlast.value
-    ; m_tfirst = w.tfirst.value
-    ; app_start = w.tfirst.value |: r.empty_start.value
+    ; m_tvalid = en &: w.tvalid.value
+    ; m_tlast = en &: w.tlast.value
+    ; m_tfirst = en &: w.tfirst.value
+    ; app_start = en &: (w.tfirst.value |: r.empty_start.value)
     ; src_port = r.src_port.value
     ; dst_port = r.dst_port.value
     ; udp_length = r.length.value
@@ -321,7 +326,7 @@ module Make (C : Config) = struct
         r.busy.value
         (* forward the frame-level late status straight up (UDP adds no FCS verdict of its
            own; the bad-frame signal originates at the MAC/IPv4 boundary) *)
-    ; frame_done = i.I.ip_frame_done
+    ; frame_done = en &: i.I.ip_frame_done
     ; frame_error = i.I.ip_frame_error
     ; keep
     }

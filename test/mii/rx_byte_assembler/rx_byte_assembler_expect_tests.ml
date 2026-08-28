@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler_expect_tests.ml" *)
 
 (* Expect Test Suite: Rx_byte_assembler
 

@@ -1,11 +1,15 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_controller_expect_tests.ml" *)
 
 (* Expect Test Suite: Rx_controller
 
    Golden cycle traces for the receive-header state sequence and recovery behavior. Only
    asserted outputs are printed, keeping the traces readable while retaining the exact
    state/register-enable timing.
+
+   I love the tuareg and expect test thingy in Emacs. Second most boring thing is pasting
+   expect sexps - close first of PCB-level validation; rip Vignesh.
 *)
 
 open! Core

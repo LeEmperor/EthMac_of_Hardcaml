@@ -1,31 +1,23 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_controller_unit_quickcheck_tests.ml" *)
 
 (* Unit and Quickcheck Test Suite: Rx_controller
 
    Typed examples and generated properties covering the receive-header state sequence,
    registered datapath enables, valid gaps, reset recovery, and receive errors.
+
+   TODO: extend this suite with a stateful generator weighted toward boundary bytes and
+   control events - valid gaps, resets, [rx_er], and [en] transitions - rather than the
+   uniform frame generator used below. (Carried over from the deleted
+   [test_rx_controller.ml] stub.)
 *)
 
 open! Core
+open! Hardcaml_verif
 open! Rx_controller_testbench
 
-module Generators = struct
-  let byte = Int.gen_incl 0x00 0xFF
-  let bytes length = List.gen_with_length length byte
-
-  let frame =
-    let open Quickcheck.Generator.Let_syntax in
-    let%bind preamble_length = Int.gen_incl 1 10 in
-    let%bind destination_mac = bytes 6 in
-    let%bind source_mac = bytes 6 in
-    let%bind eth_type = bytes 2 in
-    let%bind payload_length = Int.gen_incl 0 24 in
-    let%map payload = bytes payload_length in
-    Frame.create ~preamble_length ~destination_mac ~source_mac ~eth_type ~payload ()
-  ;;
-end
-
+(* holy tall Batman *)
 let output
   ?(byte_assembler_en = true)
   ?(dst_mac_reg_en = false)
@@ -166,5 +158,5 @@ let%test_unit "walks randomized frames" =
     ~seed:(`Deterministic "rx-controller-reference-model")
     ~sexp_of:[%sexp_of: Frame.t]
     ~f:check_frame
-    Generators.frame
+    (Generators.eth_frame ~max_payload_length:24 ())
 ;;

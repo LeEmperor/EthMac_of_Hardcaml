@@ -1,18 +1,13 @@
+; University of Florida
+; Author: Bohdan Purtell
+;
+; Dune specs for the shared testbench helpers. The per-DUT suites live in subdirectories
+; (clk_div/, second_pulse/, helper_circuits/, verif/), each with its own dune.
+
 (library
  (name helper_tb_functions)
  (modules helper_tb_functions)
  (libraries core hardcaml hardcaml_waveterm)
- (preprocess
-  (pps ppx_hardcaml ppx_jane))
- (lint
-  (pps ppx_js_style))
- (flags
-  (:standard -w -27-57-33-34-35-40-63-47-26)))
-
-(executables
- (names clk_div_tb second_pulse_tb)
- (modules clk_div_tb second_pulse_tb)
- (libraries core hardcaml helper_circuits hardcaml_waveterm)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
  (lint

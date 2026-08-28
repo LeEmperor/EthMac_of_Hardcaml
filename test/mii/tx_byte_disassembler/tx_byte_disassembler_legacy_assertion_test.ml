@@ -1,8 +1,16 @@
 (* University of Florida *)
 (* Author: Bohdan Purtelll *)
+(* Module: "tx_byte_disassembler_legacy_assertion_test.ml" *)
 
-(* Legacy assertion tests leftover from the strange testing era. Why doesn't era have two
+(* Legacy Assertion Test: Tx_byte_disassembler
+
+   Legacy assertion tests leftover from the strange testing era. Why doesn't era have two
    Rs? Cuz it might be an error!
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
 *)
 
 open! Core
@@ -11,7 +19,7 @@ open! Mii_of_hardcaml
 (* open! Hardcaml_waveterm *)
 (* open! Helper_tb_functions *)
 
-let () = print_endline "=== Running MAC TX Byte Disassembler Testbench ==="
+(* let () = print_endline "=== Running MAC TX Byte Disassembler Testbench ===" *)
 
 (* let waveform_enabled = *)
 (*   Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform") *)

@@ -1,11 +1,15 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_controller_testbench.ml" *)
 
 (* Testbench Support: Rx_controller
 
    Shared DUT fixture, byte-level drivers, observations, and simulation scenarios used by
    the unit, Quickcheck, and expect test suites. [rx_data] is the output of the byte
    assembler, so one controller transaction is one complete byte.
+
+   This is a stateful example of testbench architecture vs combinational. We'll see how
+   good it is.
 *)
 
 open! Core
@@ -13,6 +17,7 @@ open! Hardcaml
 open! Signal
 open! Mii_of_hardcaml
 open! Hardcaml_step_testbench
+open! Hardcaml_verif
 module Dut = Rx_controller
 
 module Output_snapshot = struct
@@ -62,6 +67,10 @@ module Compact_observation = struct
   [@@deriving sexp, equal, compare]
 end
 
+(* I reason taht these items are a bunch of UVM items that I compose things into; not sure
+   on the performance implications of runtime deciding on the observation class but alas
+   this was the only way that made sense to me
+*)
 module Pause_observation = struct
   type t =
     { before_pause : Output_snapshot.t
@@ -90,43 +99,24 @@ module Error_observation = struct
   [@@deriving sexp, equal, compare]
 end
 
-module Frame = struct
-  type t =
-    { preamble_length : int
-    ; destination_mac : int list
-    ; source_mac : int list
-    ; eth_type : int list
-    ; payload : int list
-    }
-  [@@deriving sexp, equal, compare]
+(* Lifted into [Hardcaml_verif.Eth_frame] so the CRC, datapath, and integration suites
+   describe frames the same way. Re-exported under the old name for readability here.
 
-  let create
-    ?(preamble_length = 7)
-    ?(destination_mac = [ 0x00; 0x11; 0x22; 0x33; 0x44; 0x55 ])
-    ?(source_mac = [ 0x66; 0x77; 0x88; 0x99; 0xAA; 0xBB ])
-    ?(eth_type = [ 0x08; 0x00 ])
-    ?(payload = [])
-    ()
-    =
-    if preamble_length < 1 then invalid_arg "preamble_length must be positive";
-    if List.length destination_mac <> 6
-    then invalid_arg "destination_mac must contain 6 bytes";
-    if List.length source_mac <> 6 then invalid_arg "source_mac must contain 6 bytes";
-    if List.length eth_type <> 2 then invalid_arg "eth_type must contain 2 bytes";
-    let all_bytes = destination_mac @ source_mac @ eth_type @ payload in
-    if List.exists all_bytes ~f:(fun byte -> byte < 0 || byte > 0xFF)
-    then invalid_arg "frame bytes must be between 0x00 and 0xff";
-    { preamble_length; destination_mac; source_mac; eth_type; payload }
-  ;;
-
-  let byte_count t = t.preamble_length + 1 + 6 + 6 + 2 + List.length t.payload
-end
+   I love aliases.
+*)
+module Frame = Eth_frame
 
 module Testbench = struct
-  module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
-  module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
+  module Fixture = Sim_fixture.Make (struct
+      include Dut
 
-  let bit value = if value then Bits.vdd else Bits.gnd
+      let name = "Rx_controller"
+    end)
+
+  module Sim = Fixture.Sim
+  module Step = Fixture.Step
+
+  let bit = Bits_conv.bit
 
   let inputs ~reset ~en ~rx_dv ~rx_er ~rx_data ~rx_data_valid =
     { Step.input_hold with
@@ -153,6 +143,7 @@ module Testbench = struct
     }
   ;;
 
+  (* this looks awfully functionizable *)
   let active_outputs (output : Output_snapshot.t) =
     List.filter_opt
       [ Option.some_if output.byte_assembler_en "byte_assembler_en"
@@ -185,6 +176,7 @@ module Testbench = struct
     |> Step.O_data.after_edge
   ;;
 
+  (* they call me baby driver the way I drive things *)
   let drive_byte ?(rx_er = false) (handler : Step.Handler.t @ local) byte =
     cycle
       handler
@@ -196,6 +188,7 @@ module Testbench = struct
       ~rx_data_valid:true
   ;;
 
+  (* valid not true here; *)
   let drive_invalid_cycle (handler : Step.Handler.t @ local) =
     cycle
       handler
@@ -207,6 +200,9 @@ module Testbench = struct
       ~rx_data_valid:false
   ;;
 
+  (* i wonder if reset agents can be composed into an abstraction much like how reset
+     agents are done in proper UVM suites?
+  *)
   let reset ?(num_cycles = 1) (handler : Step.Handler.t @ local) =
     Step.delay
       ~num_cycles
@@ -220,6 +216,9 @@ module Testbench = struct
          ~rx_data_valid:false)
   ;;
 
+  (* absolute fun function to write rec functions are like little puzzles - you almost
+     have to break out an ASM diagram to write one
+  *)
   let observe_bytes (handler : Step.Handler.t @ local) ~phase bytes =
     let rec loop (handler : Step.Handler.t @ local) index = function
       | [] -> []
@@ -231,47 +230,55 @@ module Testbench = struct
     loop handler 0 bytes
   ;;
 
-  let create_simulator () =
-    let scope =
-      Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true ()
-    in
-    Sim.create (Dut.create scope)
-  ;;
+  let create_simulator = Fixture.create_simulator
+  let run_with_timeout = Fixture.run_with_timeout
 
-  let run_with_timeout ~timeout ~testbench =
-    let simulator = create_simulator () in
-    match Step.run_with_timeout ~timeout () ~simulator ~testbench with
-    | Some result -> result
-    | None -> failwith "Rx_controller testbench timed out"
-  ;;
+  [@@@ocamlformat "disable"]
 
+  (* formatt-er? I hardly know 'er *)
   let frame_scenario frame (handler : Step.Handler.t @ local) _initial_outputs =
+
+    (* reset *)
     reset handler;
+
+    (* preamble *)
     let preamble =
       observe_bytes
         handler
         ~phase:(fun index -> Phase.Preamble index)
         (List.init frame.Frame.preamble_length ~f:(fun _ -> 0x55))
     in
+
+    (* sfd *)
     let sfd_output = drive_byte handler 0xD5 |> snapshot in
     let sfd = { Observation.phase = Sfd; byte = 0xD5; output = sfd_output } in
+
+    (* dst mac *)
     let destination_mac =
       observe_bytes
         handler
         ~phase:(fun index -> Phase.Destination_mac index)
         frame.destination_mac
     in
+
+    (* src mac *)
     let source_mac =
       observe_bytes handler ~phase:(fun index -> Phase.Source_mac index) frame.source_mac
     in
+
+    (* eth type *)
     let eth_type =
       observe_bytes handler ~phase:(fun index -> Phase.Eth_type index) frame.eth_type
     in
+
+    (* da big momma *)
     let payload =
       observe_bytes handler ~phase:(fun index -> Phase.Payload index) frame.payload
     in
+
     preamble @ (sfd :: destination_mac) @ source_mac @ eth_type @ payload
-  ;;
+
+  [@@@ocamlformat "enable"]
 
   let run_frame frame =
     run_with_timeout
@@ -279,40 +286,69 @@ module Testbench = struct
       ~testbench:(frame_scenario frame)
   ;;
 
+  [@@@ocamlformat "disable"]
+
+  (* pause during destination setting *)
   let run_destination_pause () =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+
+      (* reset to pause *)
       reset handler;
+
+      (* dont care aobut sfd or preamble items in this seq *)
       ignore (drive_byte handler 0x55 : Bits.t Dut.O.t);
       ignore (drive_byte handler 0xD5 : Bits.t Dut.O.t);
+
+      (* never knew there was an id function *)
       let destination_prefix = List.init 5 ~f:Fn.id in
+
+      (* grab the snapshot; way more convoluted than one might think *)
       let before_pause =
-        let rec drive_prefix (handler : Step.Handler.t @ local) = function
+        (* drive the first 5 bytes, then follow *)
+        let rec drive_prefix (handler : Step.Handler.t @ local) = function (* match with sugar *)
           | [] -> failwith "destination prefix cannot be empty"
           | [ byte ] -> drive_byte handler byte
           | byte :: remaining_bytes ->
             ignore (drive_byte handler byte : Bits.t Dut.O.t);
             drive_prefix handler remaining_bytes
         in
+
         drive_prefix handler destination_prefix |> snapshot
       in
+
+      (* cap until we hit pause *)
       let during_pause = drive_invalid_cycle handler |> snapshot in
+
+      (* run the 6th byte, and check *)
       let after_sixth_destination_byte = drive_byte handler 5 |> snapshot in
+
+      (* going to src byte, make sure we're not off by one *)
       let after_first_source_byte = drive_byte handler 0xA0 |> snapshot in
-      { Pause_observation.before_pause
+
+      { Pause_observation.
+        before_pause
       ; during_pause
       ; after_sixth_destination_byte
       ; after_first_source_byte
       }
     in
-    run_with_timeout ~timeout:14 ~testbench
-  ;;
 
+    run_with_timeout ~timeout:14 ~testbench
+
+  (* mid frame reset case - pretty important *)
   let run_reset_mid_frame () =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+      (* rst *)
       reset handler;
+
+      (* preamble + sfd *)
       ignore (drive_byte handler 0x55 : Bits.t Dut.O.t);
       ignore (drive_byte handler 0xD5 : Bits.t Dut.O.t);
+
+      (* the partial header the reset is about to discard *)
       let before_reset = drive_byte handler 0x11 |> snapshot in
+
+      (* manually drive the reset *)
       let reset_cycle =
         cycle
           handler
@@ -323,19 +359,33 @@ module Testbench = struct
           ~rx_data:0
           ~rx_data_valid:false
       in
+
+      (* capture snapshots; *)
       let after_reset = snapshot reset_cycle in
       let after_next_preamble = drive_byte handler 0x55 |> snapshot in
-      { Reset_observation.before_reset; after_reset; after_next_preamble }
-    in
-    run_with_timeout ~timeout:10 ~testbench
-  ;;
 
+      { Reset_observation.
+        before_reset
+      ; after_reset
+      ; after_next_preamble
+      }
+    in
+
+    run_with_timeout ~timeout:10 ~testbench
+
+  (* error in payload *)
   let run_payload_error () =
     let frame = Frame.create () in
+
     let testbench (handler : Step.Handler.t @ local) initial_outputs =
+      (* manualy run whole frame scenario *)
       let observations = frame_scenario frame handler initial_outputs in
+
+      (* log before and afte rerror events *)
       let before_error = (List.last_exn observations).output in
       let after_error = drive_byte ~rx_er:true handler 0xDE |> snapshot in
+
+      (* manually idle after *)
       let following_idle_cycle =
         cycle
           handler
@@ -347,11 +397,19 @@ module Testbench = struct
           ~rx_data_valid:false
         |> snapshot
       in
-      { Error_observation.before_error; after_error; following_idle_cycle }
-    in
-    run_with_timeout ~timeout:(8 + Frame.byte_count frame) ~testbench
-  ;;
 
+      { Error_observation.
+        before_error
+      ; after_error
+      ; following_idle_cycle
+      }
+    in
+
+    run_with_timeout ~timeout:(8 + Frame.byte_count frame) ~testbench
+
+  [@@@ocamlformat "enable"]
+
+  (* kinda usless but chiller ig *)
   let run_enable_case ~en ~rx_dv =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
       reset handler;

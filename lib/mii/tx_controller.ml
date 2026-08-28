@@ -32,6 +32,11 @@ module O = struct
     { byte_mux_sel : 'a [@bits 3]
     ; mac_byte_sel : 'a [@bits 3]
     ; crc_en : 'a
+        (* 1 while the byte being emitted this cycle is covered by the FCS: the two MACs,
+           the ethertype and the payload. Low through the preamble and SFD, which precede
+           the CRC, and through Fcs, where the accumulator is being read out rather than
+           fed. This is the FSM's own statement of the CRC window - [mac_top] gates
+           [Tx_crc.data_valid] with it rather than re-deriving the window from [state]. *)
     ; state : 'a [@bits 3]
     ; tx_busy : 'a (* 1 while a frame is in flight (Preamble..Fcs), 0 in Idle *)
     ; pad : 'a
@@ -49,20 +54,8 @@ module I_Regs = struct
         (* latched start request — lets a streaming source pulse start before its first
            byte lands in the FIFO *)
     ; padding : 'a
-        (* 1 once the datagram's real bytes are exhausted but the 46-byte minimum is not
-           yet met *)
-    ; in_preamble : 'a
-    ; in_sfd : 'a
-    ; in_payload : 'a
-    ; in_fcs : 'a
-    }
-  [@@deriving hardcaml]
-end
-
-module I_Wires = struct
-  type 'a t =
-    { byte_disassembler_en : 'a
-    ; crc_en : 'a
+    (* 1 once the datagram's real bytes are exhausted but the 46-byte minimum is not yet
+       met *)
     }
   [@@deriving hardcaml]
 end
@@ -83,14 +76,34 @@ let create (scope : Scope.t) i : _ O.t =
   let sm = State_machine.create (module States) ~enable:vdd rising_edge in
   let i_regs = I_Regs.Of_always.reg ~enable:vdd rising_edge in
   I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) i_regs;
-  let i_wires = I_Wires.Of_always.wire Signal.zero in
-  I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) i_wires;
   (* local closure helper functions for counter handling *)
   let rst_counter = i_regs.byte_counter <--. 0 in
   let increm_counter = i_regs.byte_counter <-- i_regs.byte_counter.value +:. 1 in
+  (* Padding, as the [Payload] state below should read it. The registered [padding] only
+     latches on a byte carrying [payload_last], so a zero-length datagram — which reaches
+     [Payload] with the FIFO already empty and never presents such a byte — could satisfy
+     neither exit of that state and would wait there forever. An empty payload is
+     sub-minimum by definition, so "empty on arrival in [Payload]" is padding too, and the
+     pad branch then emits the full 46 zero bytes like any other short datagram.
+
+     Combinational rather than a second registered latch on purpose: a cycle spent in
+     [Payload] with [pad] low and the FIFO empty would still present a byte to the
+     serializer ([mac_top] ties [byte_in_valid] to ~(state == Idle)), putting one garbage
+     byte on the wire before the pad run started. Store-and-forward means [fifo_empty]
+     cannot rise mid-payload for a datagram that has any bytes at all, so this reads
+     identically to [padding] for every length >= 1. *)
+  let padding_now =
+    (i_regs.padding.value |: (sm.is Payload &: fifo_empty)) -- "padding_now"
+  in
+  (* The FCS covers the two MACs, the ethertype and the payload - everything between the
+     SFD and the FCS itself. A decode of the current state, not a pulse: [Tx_crc]'s
+     [data_valid] wants "the byte on the wire this cycle is covered", which is exactly
+     what state membership says. *)
+  let crc_active =
+    (sm.is Dst_mac |: sm.is Src_mac |: sm.is Eth_type |: sm.is Payload) -- "crc_active"
+  in
   compile
-    [ i_wires.crc_en <--. 0
-    ; i_regs.busy <-- i_regs.busy.value
+    [ i_regs.busy <-- i_regs.busy.value
     ; sm.switch
         ~default:[]
         [ ( Idle
@@ -166,18 +179,17 @@ let create (scope : Scope.t) i : _ O.t =
              46th byte == exactly the minimum. *)
           ( Payload
           , [ if_
-                i_regs.padding.value
+                padding_now
                 [ (* real bytes are exhausted (fifo_empty); emit zeros on serializer ready
-                     only, until the frame reaches the 46-byte minimum *)
-                  when_
+                     only, until the frame reaches the 46-byte minimum. Latch [padding] so
+                     the pad run holds even if [fifo_empty] does not; the handover to Fcs
+                     below clears it again. *)
+                  i_regs.padding <--. 1
+                ; when_
                     dis_ready
                     [ if_
                         (i_regs.byte_counter.value ==:. 45)
-                        [ rst_counter
-                        ; i_regs.padding <--. 0
-                        ; i_wires.crc_en <--. 1
-                        ; sm.set_next Fcs
-                        ]
+                        [ rst_counter; i_regs.padding <--. 0; sm.set_next Fcs ]
                         [ increm_counter ]
                     ]
                 ]
@@ -191,7 +203,6 @@ let create (scope : Scope.t) i : _ O.t =
                             (i_regs.byte_counter.value >=:. 45)
                             [ (* frame already meets the minimum → straight to FCS *)
                               rst_counter
-                            ; i_wires.crc_en <--. 1
                             ; sm.set_next Fcs
                             ]
                             [ (* sub-minimum → pad the remainder with zeros *)
@@ -215,16 +226,16 @@ let create (scope : Scope.t) i : _ O.t =
                     ; i_regs.busy <--. 0
                     ; sm.set_next Idle
                     ]
-                    [ i_wires.crc_en <--. 1; increm_counter ]
+                    [ increm_counter ]
                 ]
             ] )
         ]
     ];
   { byte_mux_sel = sm.current
   ; mac_byte_sel = select i_regs.byte_counter.value ~high:2 ~low:0
-  ; crc_en = i_wires.crc_en.value
+  ; crc_en = crc_active
   ; state = sm.current
   ; tx_busy = i_regs.busy.value
-  ; pad = i_regs.padding.value
+  ; pad = padding_now
   }
 ;;

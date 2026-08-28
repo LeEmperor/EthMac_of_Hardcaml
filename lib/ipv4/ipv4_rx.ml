@@ -27,10 +27,17 @@
      is dropped rather than leaked to L4).
    - Surfaces the L4 metadata the layer above needs: [protocol], [payload_length],
      [src_ip]/[dst_ip], plus an [l4_start] SOF pulse — the RX-side mirror of the
-     [{start, l4_length, protocol}] contract Ipv4_tx consumes on TX.
+     [{start, l4_length, protocol}] contract Ipv4_tx consumes on TX. For a header-only
+     datagram, [l4_start] pulses alone because there is no payload beat to carry
+     [m_tfirst].
 
    Backpressure: [l4_tready] from L4 is forwarded up to the MAC as [m_axis_tready] during
    payload; header and flush bytes are always accepted (no output to stall).
+
+   [en] is a global clock-enable for this block. While low, all state and datapath
+   registers hold, input ready and output valid are low, and stream/status pulses are
+   suppressed. The upstream source must therefore hold its current beat until [en]
+   returns, exactly as for ordinary backpressure.
 
    Endpoints are NOT parameterized here: an RX parser accepts whatever addresses arrive
    and reports them. [Make(Config)] only carries elaboration-time knobs (checksum
@@ -85,7 +92,8 @@ module Make (C : Config) = struct
       ; m_tlast : 'a (* on the final IP-payload byte (padding dropped) *)
       ; m_tfirst : 'a (* SOF pulse on the first L4 payload byte *)
       ; (* L4 metadata — RX mirror of the Ipv4_tx {start,l4_length,protocol} contract *)
-        l4_start : 'a (* pulse alongside m_tfirst; latch metadata here *)
+        l4_start : 'a
+          (* pulse with m_tfirst, or alone for an empty datagram; latch metadata here *)
       ; protocol : 'a [@bits 8]
       ; payload_length : 'a [@bits 16] (* IP total_length - 20 *)
       ; src_ip : 'a [@bits 32]
@@ -130,6 +138,7 @@ module Make (C : Config) = struct
       ; csum_ok : 'a (* latched at header end *)
       ; crc_err : 'a (* latched from rx_tuser at rx_tlast *)
       ; first_pend : 'a (* drives the first-payload-byte SOF pulse *)
+      ; empty_start : 'a (* one-cycle metadata pulse for total_length = 20 *)
       ; busy : 'a
       }
     [@@deriving hardcaml]
@@ -149,8 +158,9 @@ module Make (C : Config) = struct
     let open Always in
     let open Variable in
     let rising_edge = Reg_spec.create ~clock:i.I.clock ~clear:i.I.reset () in
-    let sm = State_machine.create (module States) ~enable:vdd rising_edge in
-    let r = I_Regs.Of_always.reg ~enable:vdd rising_edge in
+    let en = i.I.en in
+    let sm = State_machine.create (module States) ~enable:en rising_edge in
+    let r = I_Regs.Of_always.reg ~enable:en rising_edge in
     I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) r;
     let w = I_Wires.Of_always.wire Signal.zero in
     I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) w;
@@ -184,7 +194,8 @@ module Make (C : Config) = struct
     in
     let at_hdr_end = idx ==:. ip_hdr_len - 1 in
     (* payload length computed at header end from the latched total_length *)
-    let has_payload = r.total_len.value >=:. ip_hdr_len in
+    let has_payload = r.total_len.value >:. ip_hdr_len in
+    let empty_payload = r.total_len.value ==:. ip_hdr_len in
     let payload_len_next = r.total_len.value -:. ip_hdr_len in
     (* whether the parsed header is acceptable to forward (elaboration-time policy) *)
     let keep_frame = if C.drop_on_bad_checksum then csum_good else vdd in
@@ -195,6 +206,7 @@ module Make (C : Config) = struct
       ; w.tlast <--. 0
       ; w.tfirst <--. 0
       ; r.busy <-- r.busy.value
+      ; r.empty_start <--. 0
       ; sm.switch
           ~default:[]
           [ ( Idle
@@ -229,6 +241,7 @@ module Make (C : Config) = struct
                       ; r.payload_len <-- payload_len_next
                       ; r.payload_rem <-- payload_len_next
                       ; r.first_pend <--. 1
+                      ; when_ (empty_payload &: keep_frame) [ r.empty_start <--. 1 ]
                       ; if_
                           (has_payload &: keep_frame)
                           [ sm.set_next Payload ]
@@ -288,17 +301,18 @@ module Make (C : Config) = struct
            @ [ r.csum_ok.value; r.crc_err.value; r.busy.value ])
       else gnd
     in
-    (* Frame-level late status: fire on the MAC's actual end-of-frame (rx_tlast, in ANY
-       state — Payload for exact-fit frames, Flush while dropping padding), combinational
-       so the verdict aligns with the byte that carries it. *)
-    let frame_done = i.I.rx_tvalid &: i.I.rx_tlast in
+    (* Frame-level late status: fire when the MAC's actual end-of-frame byte is accepted
+       (rx_tlast, in ANY state — Payload for exact-fit frames, Flush while dropping
+       padding). Keep it combinational so the verdict aligns with the byte that carries
+       it, and qualify it with ready so a stalled final byte produces exactly one pulse. *)
+    let frame_done = en &: i.I.rx_tvalid &: i.I.rx_tlast &: w.m_ready.value in
     let frame_error = i.I.rx_tuser in
-    { O.m_axis_tready = w.m_ready.value
+    { O.m_axis_tready = en &: w.m_ready.value
     ; m_tdata = i.I.rx_tdata
-    ; m_tvalid = w.tvalid.value
-    ; m_tlast = w.tlast.value
-    ; m_tfirst = w.tfirst.value
-    ; l4_start = w.tfirst.value
+    ; m_tvalid = en &: w.tvalid.value
+    ; m_tlast = en &: w.tlast.value
+    ; m_tfirst = en &: w.tfirst.value
+    ; l4_start = en &: (w.tfirst.value |: r.empty_start.value)
     ; protocol = r.protocol.value
     ; payload_length = r.payload_len.value
     ; src_ip = r.src_ip.value

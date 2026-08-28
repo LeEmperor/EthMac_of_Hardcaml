@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler_testbench.ml" *)
 
 (* Testbench Support: Rx_byte_assembler
 
@@ -14,6 +15,7 @@ open! Hardcaml
 open! Signal
 open! Mii_of_hardcaml
 open! Hardcaml_step_testbench
+open! Hardcaml_verif
 (* open! Helper_circuits *)
 
 module Dut = Rx_byte_assembler
@@ -39,9 +41,16 @@ end
 
 (* main re-usables *)
 module Testbench = struct
-  (* eventsim to come eventually *)
-  module Sim = Cyclesim.With_interface (Dut.I) (Dut.O)
-  module Step = Hardcaml_step_testbench.Functional.Cyclesim.Make (Dut.I) (Dut.O)
+  (* eventsim to come eventually - [Sim_fixture] is the seam where a second backend slots
+     in as a parallel functor *)
+  module Fixture = Sim_fixture.Make (struct
+      include Dut
+
+      let name = "Rx_byte_assembler"
+    end)
+
+  module Sim = Fixture.Sim
+  module Step = Fixture.Step
 
   (* highkey can probably lift this to Helper_circuits *)
   module Byte_transaction = struct
@@ -55,8 +64,8 @@ module Testbench = struct
     (* ik theres a structured binding for this but i like readability *)
   end
 
-  (* very useful helper that codex thought up *)
-  let bit value = if value then Bits.vdd else Bits.gnd
+  (* very useful helper that codex thought up - now shared *)
+  let bit = Bits_conv.bit
 
   (* fan an input record; thought is that theres a more generic function f that lets me take a module I and generate the "inputs" function for it with all the arguments labelled already and everything, and the implementation is left to me *)
   let inputs ~reset ~en ~rx_data =
@@ -124,20 +133,9 @@ module Testbench = struct
     loop handler bytes
   ;;
 
-  (* repetable boilerplate *)
-  let create_simulator () =
-    let scope =
-      Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true ()
-    in
-    Sim.create (Dut.create scope)
-  ;;
-
-  let run_with_timeout ~timeout ~testbench =
-    let simulator = create_simulator () in
-    match Step.run_with_timeout ~timeout () ~simulator ~testbench with
-    | Some result -> result
-    | None -> failwith "Rx_byte_assembler testbench timed out"
-  ;;
+  (* repetable boilerplate, now living in [Hardcaml_verif.Sim_fixture] *)
+  let create_simulator = Fixture.create_simulator
+  let run_with_timeout = Fixture.run_with_timeout
 
   let run_bytes bytes =
     let timeout = 4 + (2 * List.length bytes) in
@@ -167,7 +165,8 @@ module Testbench = struct
       List.map ((after_low :: while_disabled) @ [ after_high ]) ~f:snapshot
     in
     (* actual sequence execution -> the ownership model of the sequence owning it's own
-       execution is very UVM-like and I've never truly understood it but alas *)
+       execution is very UVM-like and I've never truly understood it but alas
+    *)
     run_with_timeout ~timeout:(6 + List.length disabled_nibbles) ~testbench
   ;;
 
@@ -175,17 +174,23 @@ module Testbench = struct
      the quickcheck with one of those probabilistic unions might be interested to see
      applied here and whether or not we can see a relationship in between flow through
      behaviours and the proportions of items in the randomized union that would comprise
-     the test casese or the reset distribution *)
+     the test casese or the reset distribution
+  *)
+  [@@@ocamlformat "disable"]
+
   let run_reset_mid_byte ~discarded_low ~byte =
-    let testbench (handler : Step.Handler.t @ local) _initial_outputs =
+    let testbench (handler : Step.Handler.t @ local) _initial_outputs = (* heeheheeheehaw warning 67 *)
+
       (* reset *)
       reset handler;
+
       (* form a snapshot *)
       let after_discarded_low = drive_nibble handler discarded_low in
       let after_reset =
         Step.cycle handler (inputs ~reset:true ~en:false ~rx_data:0)
         |> Step.O_data.after_edge
       in
+
       let low, high = Byte_transaction.to_nibbles byte in
       (* eventually gotta stop doing this parenthesis thing but really helps me to reason
          about tuples - standard notation should be enforced in OCaml - I guess I could
@@ -196,14 +201,19 @@ module Testbench = struct
          discord!) may be difficult -> haven't ever found this to be a problem but ill ask
          a dev about it eventually -> apparently the stdlib does these things as well to
          guarantee execution order; C++ has similar fallacies, which is why then() exists
-         me thinks *)
+         me thinks
+      *)
+
       let after_low = drive_nibble handler low in
       let after_high = drive_nibble handler high in
       List.map [ after_discarded_low; after_reset; after_low; after_high ] ~f:snapshot
     in
+
     (* execute myself *)
     run_with_timeout ~timeout:8 ~testbench
-  ;;
+
+  [@@@ocamlformat "enable"]
+
   (* statistically the timeout is not guaranteed lmao - hopefully the regression rigs
      don't catch it *)
 end
