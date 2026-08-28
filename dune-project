@@ -16,6 +16,9 @@
   ppx_hardcaml
   hardcaml_circuits
   hardcaml_waveterm
+  hardcaml_step_testbench
+  ppx_expect
+  base_quickcheck
   alcotest
   (ppx_js_style :with-dev-setup)
   (ocamlformat :with-dev-setup)
