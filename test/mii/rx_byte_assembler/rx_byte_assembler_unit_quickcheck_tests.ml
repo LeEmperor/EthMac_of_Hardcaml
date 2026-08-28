@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler_unit_quickcheck_tests.ml" *)
 
 (* Unit and Quickcheck Test Suite: Rx_byte_assembler
 
@@ -11,25 +12,13 @@
 *)
 
 open! Core
+open! Hardcaml_verif
 open! Rx_byte_assembler_testbench
 
-(* fascinating composition *)
-module Generators = struct
-  (* random variable byte B *)
-  let byte : int Quickcheck.Generator.t =
-    (* ability to discern types here has been finicky sometimes; maybe need to re-build
-       ocamllsp or something tbh *)
-    Int.gen_incl 0x00 0xFF
-  ;;
-
-  (* need to import the weighted random sequence thing in eventually - would probablybe a
-     fun exercise to write one my own for some Caltrain ride *)
-  let byte_sequence : int list Quickcheck.Generator.t =
-    let open Quickcheck.Generator.Let_syntax in
-    let%bind length = Int.gen_incl 1 16 in
-    List.gen_with_length length byte
-  ;;
-end
+(* fascinating composition - the byte and byte-sequence generators moved into
+   [Hardcaml_verif.Generators] so every suite randomizes over the same shapes. Still want
+   the weighted random sequence thing in there eventually - would probably be a fun
+   exercise to write one my own for some Caltrain ride. *)
 
 (* henchmen (helper) 1 *)
 let expected_observation byte : Observation.t =
@@ -61,5 +50,5 @@ let%test_unit "assembles random byte sequences" =
     ~shrinker:(List.quickcheck_shrinker Int.quickcheck_shrinker)
     ~shrink_attempts:(`Limit 100)
     ~f:check_bytes
-    Generators.byte_sequence
+    (Generators.byte_list ~min_length:1 ~max_length:16 ())
 ;;

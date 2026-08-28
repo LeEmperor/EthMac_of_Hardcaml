@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler_expect_tests.ml" *)
 
 (* Expect Test Suite: Tx_byte_disassembler
 

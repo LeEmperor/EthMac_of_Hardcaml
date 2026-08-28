@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler_unit_quickcheck_tests.ml" *)
 
 (* Unit and Quickcheck Test Suite: Tx_byte_disassembler
 
@@ -8,20 +9,12 @@
 *)
 
 open! Core
+open! Hardcaml_verif
 open! Tx_byte_disassembler_testbench
 
-(* port to a central thing eventually! port to starboard lmao -> i should call it
-   starboard because everything gets ported into it; by the MVT theres some defined area
-   where we go from not starboard to starboard *)
-module Generators = struct
-  let byte : int Quickcheck.Generator.t = Int.gen_incl 0x00 0xFF
-
-  let byte_sequence : int list Quickcheck.Generator.t =
-    let open Quickcheck.Generator.Let_syntax in
-    let%bind length = Int.gen_incl 1 16 in
-    List.gen_with_length length byte
-  ;;
-end
+(* ported to a central thing at last! ported to starboard lmao -> everything gets ported
+   into [Hardcaml_verif.Generators]; by the MVT theres some defined area where we go from
+   not starboard to starboard *)
 
 (* I wonder if there's a way to generate expected_observation functions? *)
 let expected_observation byte : Observation.t =
@@ -95,5 +88,5 @@ let%test_unit "disassembles random byte sequences" =
     ~shrinker:(List.quickcheck_shrinker Int.quickcheck_shrinker)
     ~shrink_attempts:(`Limit 100)
     ~f:check_bytes
-    Generators.byte_sequence
+    (Generators.byte_list ~min_length:1 ~max_length:16 ())
 ;;

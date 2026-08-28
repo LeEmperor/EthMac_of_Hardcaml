@@ -19,7 +19,27 @@
   mii_of_hardcaml
   hardcaml_waveterm
   helper_tb_functions
-  hardcaml_step_testbench)
+  hardcaml_step_testbench
+  hardcaml_verif)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
+
+; The legacy harness is a bare (executable): built by [dune build] so it keeps
+; type-checking against the RTL, never invoked by [dune runtest].
+
+(executable
+ (name tx_byte_disassembler_legacy_assertion_test)
+ (modules tx_byte_disassembler_legacy_assertion_test)
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions)
  (preprocess
   (pps ppx_hardcaml ppx_jane))
  (lint

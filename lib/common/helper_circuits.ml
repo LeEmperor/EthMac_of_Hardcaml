@@ -1,19 +1,59 @@
+(* Small combinational and register helpers shared across the MII, IPv4 and UDP blocks:
+   edge detectors, a delay line, the two composed of both, and three byte-placement
+   functions for header builders.
+
+   Both detectors compare the current input against a one-cycle-old copy of it, so each is
+   combinational in [x] and registered only in the history. Two consequences fall out of
+   that, and both bite consumers rather than this file:
+
+   - The output is a single-cycle pulse, live during the cycle the edge happens, not the
+     cycle after. Sample it [before_edge]; at [after_edge] the history register has
+     already taken this cycle's value and both detectors read zero unconditionally,
+     whatever the input did.
+   - The history register lives in the caller's [spec], so the caller's clear zeroes it.
+     Out of clear the history reads zero, so an input that is already high looks like a
+     rise whether or not it was one.
+
+   The clear also reaches through [delay_by], which is what makes [rising_edge_delayed]
+   and [falling_edge_delayed] worth reading twice. A clear landing on the same cycle as a
+   detected edge kills the delay register that would have carried it, on that same edge -
+   and the two directions then part ways, because the clear has also zeroed the history:
+
+   - A rise whose input stays high is re-detected on the cycle after the clear, so the
+     detector emits a two-cycle pulse and the delayed copy arrives exactly once, one cycle
+     late. Deferred, not lost.
+   - A fall is gone. A low input against a zeroed history is not an edge, so there is no
+     second detection and no delayed pulse at all.
+
+   This is what a clear is supposed to do - flush the pipeline - and it is deliberately
+   not worked around here. The available workaround would be to build the delay chain on a
+   clear-free spec, and that is worse: it would hand the consumer a delayed edge for a
+   transition its own reset caused, describing a frame that no longer exists. Callers that
+   need the edge across a reset have to hold it themselves. [rx_controller]'s
+   [fcs_present] is the delayed consumer in this repo, and [mac_top]'s [frame_end] the
+   plain one; the latter is a falling detector, so a clear coincident with the end of a
+   frame swallows it. See findings RTL-6, and the goldens in
+   [test/common/helper_circuits/].
+
+   [delay_by spec ~n_cycles:0 x] is [x] itself, not a register - the base case of the
+   recursion returns its argument, so a caller wiring it straight to a circuit output has
+   to put a [wireof] in between.
+*)
+
 open! Core
 open! Hardcaml
 open! Signal
 open! Always
 open! Variable
 
-(* TODO: how does this work? its a 1F && ~1F it appears? *)
-(* does this map to a reg as the output, or a wire combo'd of the prev value *)
+(* High when the history register holds one and the input has gone to zero: the cycle the
+   input falls, and only that cycle. *)
 let falling_edge_detector spec x =
   let x_d = Signal.reg spec x in
   x_d &: ~:x
 ;;
 
-(* on an edge, if the old value of the register is high, and the new value is low, then
-   falling edge found *)
-
+(* The mirror of the above: the cycle the input goes high against a zero history. *)
 let rising_edge_detector spec x =
   let x_d = Signal.reg spec x in
   ~:x_d &: x

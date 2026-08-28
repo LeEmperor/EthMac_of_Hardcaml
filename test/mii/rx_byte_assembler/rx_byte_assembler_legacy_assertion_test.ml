@@ -1,5 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler_legacy_assertion_test.ml" *)
 
 (* Legacy Assertion Test: Rx_byte_assembler
 

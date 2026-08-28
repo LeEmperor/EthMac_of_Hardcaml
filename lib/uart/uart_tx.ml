@@ -1,3 +1,15 @@
+(* Bohdan Purtell University of Florida
+
+   Module: Uart_tx A tick-driven 8-N-1 UART transmitter: one space start bit, eight data
+   bits least significant first, one mark stop bit. The block advances on [tick] rather
+   than on the clock, so the baud rate lives in whatever generates [tick] and the frame
+   this module sends is the same shape at every tick spacing.
+
+   [uart_tx] is a Moore output driven straight off the current state - there is no
+   register between the state and the pin - so the line during a cycle is what that
+   cycle's state selects.
+*)
+
 open! Core
 open! Hardcaml
 open! Signal
@@ -18,7 +30,8 @@ end
 module O = struct
   type 'a t =
     { uart_tx : 'a
-    ; keep : 'a
+    ; (* debug lines *)
+      keep : 'a
     }
   [@@deriving hardcaml]
 end
@@ -29,13 +42,20 @@ module States = struct
     | START
     | PAYLOAD
     | STOP
-    | DONE
   [@@deriving sexp_of, compare ~localize, enumerate]
 end
 
+(* internal regs block *)
+module I_Regs = struct
+  type 'a t = { data_place_counter : 'a [@bits 3] } [@@deriving hardcaml]
+end
+
+(* internal wires block *)
+module I_Wires = struct
+  type 'a t = { tx_d : 'a } [@@deriving hardcaml]
+end
+
 let create (scope : Scope.t) i : _ O.t =
-  (* scope shenanigans *)
-  let _scope = Scope.sub_scope scope "uart_tx" in
   (* port aliases *)
   let clk = i.I.clk in
   let rst = i.I.rst in
@@ -43,12 +63,16 @@ let create (scope : Scope.t) i : _ O.t =
   let byte = i.I.d_in in
   let byte_valid = i.I.d_in_valid in
   let rising_edge : Reg_spec.t = Reg_spec.create ~clock:clk ~clear:rst () in
-  let tx_d = Always.Variable.wire ~default:(Signal.one 1) () in
   (* state machine *)
   let sm = Always.State_machine.create (module States) ~enable:en rising_edge in
-  (* internals *)
-  let data_place_counter = Always.Variable.reg ~enable:en ~width:3 rising_edge in
-  let frame = concat_msb [ Signal.zero 1; byte; Signal.one 1 ] in
+  (* tagging + register creation *)
+  let i_regs = I_Regs.Of_always.reg ~enable:en rising_edge in
+  I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) i_regs;
+  (* tagging + wire creation - the line idles at mark, so this wire defaults high *)
+  let i_wires = I_Wires.Of_always.wire Signal.ones in
+  I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) i_wires;
+  let data_place_counter = i_regs.data_place_counter in
+  let tx_d = i_wires.tx_d in
   Always.(
     (* moore assignment *)
     compile
@@ -59,11 +83,10 @@ let create (scope : Scope.t) i : _ O.t =
           [ IDLE, [ tx_d <--. 1 ]
           ; START, [ tx_d <--. 0 ]
           ; ( PAYLOAD
-            , [ (* bitmasked shift register, is there a more OCaml way for this? *)
-                (* let target = (srl byte ~by:1) in *)
-                (* tx_d <-- target; *)
-                (* let shifted = srl byte data_place_counter.value in *)
-                (* () *)
+            , [ (* The counter indexes the byte least significant bit first, which is the
+                   order the wire carries. A mux over [bits_lsb], not a shift register:
+                   [byte] is read combinationally every cycle, so the caller has to hold
+                   [d_in] for the whole frame. *)
                 (let tx_bit = mux data_place_counter.value (bits_lsb byte) in
                  tx_d <-- tx_bit)
               ] )
@@ -97,5 +120,9 @@ let create (scope : Scope.t) i : _ O.t =
           ; STOP, [ when_ i.I.tick [ sm.set_next IDLE ] ]
           ]
       ]);
-  { uart_tx = tx_d.value; keep = zero 1 }
+  (* Synthesis anti-pruning, in the shape the MII blocks use: OR-reduce the internals that
+     nothing else drives out of the module, so they survive into the netlist and the VCD.
+     The value means nothing - only that it depends on the bit counter and the state. *)
+  let keep = reduce ~f:( |: ) (bits_lsb data_place_counter.value @ bits_lsb sm.current) in
+  { uart_tx = tx_d.value; keep }
 ;;

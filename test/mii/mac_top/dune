@@ -1,0 +1,45 @@
+; University of Florida
+; Author: Bohdan Purtell
+; Dune specs for the complete MII MAC verification suite
+
+(library
+ (name mac_top_inline_tests)
+ (modules
+  mac_top_testbench
+  mac_top_unit_quickcheck_tests
+  mac_top_expect_tests)
+ ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench
+  hardcaml_verif)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
+
+(executables
+ (names mac_top_rx_legacy_assertion_test mac_top_tx_legacy_assertion_test)
+ (modules mac_top_rx_legacy_assertion_test mac_top_tx_legacy_assertion_test)
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane ppx_expect))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

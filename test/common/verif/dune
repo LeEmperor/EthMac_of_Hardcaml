@@ -1,0 +1,15 @@
+; University of Florida
+; Author: Bohdan Purtell
+;
+; Dune specs for the shared verification library. No inline tests live here: this
+; library is exercised by the per-DUT suites that depend on it.
+
+(library
+ (name hardcaml_verif)
+ (libraries core hardcaml hardcaml_step_testbench)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
