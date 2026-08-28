@@ -31,9 +31,10 @@ let reset_sync ~clock ~async_rst =
 
 (* 25 MHz reference clock to the PHY XI pin. Crude fabric divider — jitter is ugly but
    irrelevant at MII speeds. Returns the full Clk_div output; the caller drives
-   eth_ref_clk from [.dst_clk]. *)
+   eth_ref_clk from [.dst_clk]. [divisor] is passed explicitly rather than left to the
+   default so the 100 -> 25 MHz relationship is stated at the call site. *)
 let eth_ref_clk ~scope ~clk100mhz ~sys_rst ~en =
-  Clk_div.create scope { Clk_div.I.src_clk = clk100mhz; rst = sys_rst; en }
+  Clk_div.create ~divisor:4 scope { Clk_div.I.src_clk = clk100mhz; rst = sys_rst; en }
 ;;
 
 module Phy_reset = struct

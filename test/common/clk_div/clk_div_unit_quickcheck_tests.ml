@@ -6,11 +6,17 @@
 
    Typed examples and generated properties for the fabric clock divider.
 
-   The oracle is [Clk_div_testbench.expected_trace], a fold over the enable schedule. The
-   headline property randomizes the schedule itself - arbitrary interleavings of run, hold
-   and clear - rather than only running the counter free, because the enable is the one
-   axis of this block's behavior that the fixed ratio leaves open. A divider that dropped
-   or double-counted an enable would pass a free-running test and fail here.
+   The oracle is [Clk_div_testbench.expected_trace], a fold over the enable schedule. Two
+   axes are swept and they check different things. The divisor sweep is the plan's
+   original property, writable now that [?divisor] exists (RTL-3): the output period is
+   the ratio, and the duty cycle is half, at every ratio the RTL accepts. The enable
+   schedule sweep randomizes arbitrary interleavings of run, hold and clear, which is the
+   sharper of the two - a divider that dropped or double-counted an enable would pass a
+   free-running period measurement at every ratio and fail here.
+
+   The examples below are written against [Testbench], the divide-by-four instantiation,
+   because four is the default every caller still gets; the properties run across
+   [runners], which is all five.
 
    Tags: [{ "ACTIVE" ; "TEST" ; "QUICKCHECK" ; "UNIT_TEST" }]
 *)
@@ -21,7 +27,7 @@ open! Clk_div_testbench
 let check stimuli =
   [%test_result: Observation.t list]
     (Testbench.run_stimuli stimuli)
-    ~expect:(expected_observations stimuli)
+    ~expect:(Testbench.expected_observations stimuli)
 ;;
 
 let trace stimuli =
@@ -96,6 +102,96 @@ let%test_unit "the output is registered, not combinational off en" =
   [%test_result: bool list] befores ~expect:(false :: List.drop_last_exn afters)
 ;;
 
+(* The ratio axis. Three periods free-running is enough to separate a divider that has the
+   right period from one that only has the right first edge. *)
+let free_running_trace runner ~num_cycles =
+  List.map
+    (runner.run_stimuli (List.init num_cycles ~f:(fun _ -> Stimulus.run)))
+    ~f:(fun (observation : Observation.t) -> observation.dst_clk)
+;;
+
+let%test_unit "the output period is the divisor, at every ratio" =
+  List.iter runners ~f:(fun runner ->
+    let num_cycles = 3 * runner.divisor in
+    [%test_result: bool list]
+      ~message:(sprintf "divisor = %d" runner.divisor)
+      (free_running_trace runner ~num_cycles)
+      ~expect:
+        (expected_trace
+           ~divisor:runner.divisor
+           (List.init num_cycles ~f:(fun _ -> Stimulus.run))))
+;;
+
+let%test_unit "every interior run of like values is half a period long, at every ratio" =
+  (* The period stated as run lengths rather than as a golden list. The opening and
+     closing runs are excluded because the window cuts them: the counter leaves a clear at
+     zero and advances to one on the first driven cycle, so the trace starts partway
+     through a phase, and it ends wherever the cycle count ran out. Every run between them
+     is exactly [divisor / 2]. *)
+  List.iter runners ~f:(fun runner ->
+    let half = runner.divisor / 2 in
+    let runs =
+      free_running_trace runner ~num_cycles:(4 * runner.divisor)
+      |> List.group ~break:(fun a b -> not (Bool.equal a b))
+      |> List.map ~f:List.length
+    in
+    let interior = List.drop (List.drop_last_exn runs) 1 in
+    [%test_result: int list]
+      ~message:(sprintf "divisor = %d: interior runs" runner.divisor)
+      interior
+      ~expect:(List.map interior ~f:(fun _ -> half)))
+;;
+
+let%test_unit "the first rising edge lands half a period after the clear, at every ratio" =
+  (* Phase, stated independently of the run lengths above. The first driven cycle leaves
+     the counter at one, so the output goes high on the cycle that takes it to
+     [divisor / 2] - index [divisor / 2 - 1], counting the first driven cycle as zero. At
+     a divisor of two that is index zero: the output is high immediately. *)
+  List.iter runners ~f:(fun runner ->
+    let trace = free_running_trace runner ~num_cycles:(2 * runner.divisor) in
+    [%test_result: int option]
+      ~message:(sprintf "divisor = %d" runner.divisor)
+      (List.findi trace ~f:(fun _ high -> high) |> Option.map ~f:fst)
+      ~expect:(Some ((runner.divisor / 2) - 1)))
+;;
+
+let%test_unit "the duty cycle is exactly half over whole periods, at every ratio" =
+  List.iter runners ~f:(fun runner ->
+    List.iter [ 1; 2; 5 ] ~f:(fun periods ->
+      let num_cycles = periods * runner.divisor in
+      let high = List.count (free_running_trace runner ~num_cycles) ~f:Fn.id in
+      [%test_result: int]
+        ~message:(sprintf "divisor = %d, %d periods" runner.divisor periods)
+        high
+        ~expect:(num_cycles / 2)))
+;;
+
+let%test_unit "a divisor of two divides on the counter's only bit" =
+  (* The degenerate end: a one-bit counter, so [dst_clk] toggles every enabled cycle and
+     the MSB is the whole register. A model that assumed a spare low bit under the MSB
+     would produce a two-cycle-high pattern here. *)
+  let trace =
+    free_running_trace
+      (List.find_exn runners ~f:(fun runner -> runner.divisor = 2))
+      ~num_cycles:6
+  in
+  [%test_result: bool list] trace ~expect:[ true; false; true; false; true; false ]
+;;
+
+let%test_unit "illegal divisors are rejected at elaboration" =
+  (* Not a power of two, or below the two-bit floor. The floor matters because a divisor
+     of one asks for a zero-width register, which Hardcaml rejects with a message that
+     says nothing about divisors. *)
+  List.iter illegal_divisors ~f:(fun divisor ->
+    match elaborate divisor with
+    | Error _ -> ()
+    | Ok () -> raise_s [%message "divisor was accepted" (divisor : int)])
+;;
+
+let%test_unit "every swept divisor elaborates" =
+  List.iter runners ~f:(fun runner -> Or_error.ok_exn (elaborate runner.divisor))
+;;
+
 module Schedule = struct
   type t = Stimulus.t list [@@deriving sexp_of]
 
@@ -139,4 +235,23 @@ let%test_unit "free-running for a random number of cycles matches the model" =
     ~sexp_of:[%sexp_of: int]
     ~f:(fun num_cycles -> check (List.init num_cycles ~f:(fun _ -> Stimulus.run)))
     (Int.gen_incl 1 48)
+;;
+
+let%test_unit "random enable schedules match the model at every ratio" =
+  (* The two axes crossed: the schedule generator above, run against each instantiation.
+     Trials are lower per ratio than the divide-by-four property's sixty because this is
+     five simulations per trial; the seed is per-ratio so a failure names one. *)
+  List.iter runners ~f:(fun runner ->
+    Quickcheck.test
+      ~trials:20
+      ~seed:(`Deterministic (sprintf "clk-div-schedules-divisor-%d" runner.divisor))
+      ~sexp_of:[%sexp_of: Schedule.t]
+      ~shrinker:Schedule.quickcheck_shrinker
+      ~shrink_attempts:(`Limit 100)
+      ~f:(fun stimuli ->
+        [%test_result: Observation.t list]
+          ~message:(sprintf "divisor = %d" runner.divisor)
+          (runner.run_stimuli stimuli)
+          ~expect:(expected_observations ~divisor:runner.divisor stimuli))
+      Schedule.quickcheck_generator)
 ;;
