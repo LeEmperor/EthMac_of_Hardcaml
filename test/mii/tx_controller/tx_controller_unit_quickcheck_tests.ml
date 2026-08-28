@@ -86,6 +86,32 @@ let%test_unit "a sub-minimum datagram is zero-padded to 46 payload bytes" =
     ~expect:(Testbench.expected_byte_count payload_length)
 ;;
 
+let%test_unit "a zero-length datagram pads the whole payload phase" =
+  (* The degenerate case of the sub-minimum path: with no real byte to carry
+     [payload_last], the RTL has to recognise an empty FIFO on arrival in Payload as
+     padding. It then emits all 46 pad bytes and the frame is a normal minimum-length
+     one - so the same byte-count and state-walk oracles apply with no special case. *)
+  let observation = Testbench.run_frame ~payload_length:0 in
+  [%test_result: State.t list]
+    (Testbench.state_sequence observation)
+    ~expect:expected_state_sequence;
+  [%test_result: (State.t * int) list]
+    (Testbench.cycles_per_state observation)
+    ~expect:(expected_cycles_per_state 0);
+  [%test_result: int]
+    (Testbench.emitted_byte_count observation)
+    ~expect:(Testbench.expected_byte_count 0);
+  let padding_cycles =
+    List.count observation.trace ~f:(fun (item : Observation.t) -> item.output.pad)
+  in
+  [%test_result: int] padding_cycles ~expect:Testbench.minimum_payload_length;
+  (* [pad] must stay inside Payload: it gates the FIFO pop in [mac_top], and an assertion
+     in Idle would read as a pad byte with no frame in flight. *)
+  List.iter observation.trace ~f:(fun (item : Observation.t) ->
+    if item.output.pad
+    then [%test_result: State.t] item.output.state ~expect:State.Payload)
+;;
+
 let%test_unit "pad is never asserted for a datagram that already meets the minimum" =
   List.iter [ 46; 47; 64 ] ~f:(fun payload_length ->
     let observation = Testbench.run_frame ~payload_length in
@@ -200,7 +226,7 @@ let%test_unit "random payload lengths produce the right byte count" =
       [%test_result: (State.t * int) list]
         (Testbench.cycles_per_state observation)
         ~expect:(expected_cycles_per_state payload_length))
-    (Int.gen_incl 1 120)
+    (Int.gen_incl 0 120)
 ;;
 
 let%test_unit "random frames' payloads produce the right byte count" =
@@ -214,5 +240,5 @@ let%test_unit "random frames' payloads produce the right byte count" =
       [%test_result: int]
         (Testbench.emitted_byte_count observation)
         ~expect:(Testbench.expected_byte_count payload_length))
-    (Generators.eth_frame ~min_payload_length:1 ~max_payload_length:60 ())
+    (Generators.eth_frame ~min_payload_length:0 ~max_payload_length:60 ())
 ;;

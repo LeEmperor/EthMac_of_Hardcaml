@@ -39,11 +39,14 @@
    [Tx_crc]'s enable semantics first, since a low [en] there reloads the accumulator
    rather than stalling it.
 
-   Known limitation, deliberately not exercised. A zero-length payload deadlocks: the
-   Payload state only leaves via [~fifo_empty &: dis_ready], and [padding] is only latched
-   on a [payload_last] byte, so with no real byte to carry [payload_last] the FSM waits in
-   Payload forever. The store-and-forward gate upstream never launches an empty datagram,
-   so the generators below start at length 1.
+   Zero-length payloads. A datagram with no payload bytes reaches Payload with the FIFO
+   already empty and never presents a byte carrying [payload_last], so the registered
+   [padding] latch alone would leave the FSM stuck there. The RTL treats "empty on arrival
+   in Payload" as padding, which makes length 0 emit 46 zero bytes exactly like any other
+   sub-minimum datagram - so the byte-count oracle above already predicts it and the
+   generators below start at length 0. The store-and-forward gate upstream still never
+   launches an empty datagram, so this is a robustness property of the block rather than a
+   path [mac_top] can reach.
 
    Tags: [{ "ACTIVE" ; "TEST" ; "TESTBENCH" ; "COMMON_ITEMS" }]
 *)
@@ -231,8 +234,6 @@ module Testbench = struct
      running a fixed script. [payload_index] counts real bytes consumed, which is what
      decides [fifo_empty] and [payload_last] for the next cycle. *)
   let run_frame ~payload_length =
-    if payload_length < 1
-    then invalid_arg "payload_length must be at least 1: an empty datagram deadlocks";
     let limit = expected_byte_count payload_length + 8 in
     let testbench (handler : Step.Handler.t @ local) _initial_outputs =
       reset handler;

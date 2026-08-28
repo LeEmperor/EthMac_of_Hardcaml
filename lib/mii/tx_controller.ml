@@ -88,6 +88,22 @@ let create (scope : Scope.t) i : _ O.t =
   (* local closure helper functions for counter handling *)
   let rst_counter = i_regs.byte_counter <--. 0 in
   let increm_counter = i_regs.byte_counter <-- i_regs.byte_counter.value +:. 1 in
+  (* Padding, as the [Payload] state below should read it. The registered [padding] only
+     latches on a byte carrying [payload_last], so a zero-length datagram — which reaches
+     [Payload] with the FIFO already empty and never presents such a byte — could satisfy
+     neither exit of that state and would wait there forever. An empty payload is
+     sub-minimum by definition, so "empty on arrival in [Payload]" is padding too, and the
+     pad branch then emits the full 46 zero bytes like any other short datagram.
+
+     Combinational rather than a second registered latch on purpose: a cycle spent in
+     [Payload] with [pad] low and the FIFO empty would still present a byte to the
+     serializer ([mac_top] ties [byte_in_valid] to ~(state == Idle)), putting one garbage
+     byte on the wire before the pad run started. Store-and-forward means [fifo_empty]
+     cannot rise mid-payload for a datagram that has any bytes at all, so this reads
+     identically to [padding] for every length >= 1. *)
+  let padding_now =
+    (i_regs.padding.value |: (sm.is Payload &: fifo_empty)) -- "padding_now"
+  in
   compile
     [ i_wires.crc_en <--. 0
     ; i_regs.busy <-- i_regs.busy.value
@@ -166,10 +182,13 @@ let create (scope : Scope.t) i : _ O.t =
              46th byte == exactly the minimum. *)
           ( Payload
           , [ if_
-                i_regs.padding.value
+                padding_now
                 [ (* real bytes are exhausted (fifo_empty); emit zeros on serializer ready
-                     only, until the frame reaches the 46-byte minimum *)
-                  when_
+                     only, until the frame reaches the 46-byte minimum. Latch [padding] so
+                     the pad run holds even if [fifo_empty] does not; the handover to Fcs
+                     below clears it again. *)
+                  i_regs.padding <--. 1
+                ; when_
                     dis_ready
                     [ if_
                         (i_regs.byte_counter.value ==:. 45)
@@ -225,6 +244,6 @@ let create (scope : Scope.t) i : _ O.t =
   ; crc_en = i_wires.crc_en.value
   ; state = sm.current
   ; tx_busy = i_regs.busy.value
-  ; pad = i_regs.padding.value
+  ; pad = padding_now
   }
 ;;
