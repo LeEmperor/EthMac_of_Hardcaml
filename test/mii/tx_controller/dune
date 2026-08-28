@@ -1,0 +1,34 @@
+; University of Florida
+; Author: Bohdan Purtell
+;
+; Dune specs for the tx controller verif suite
+
+(library
+ (name tx_controller_inline_tests)
+ (modules
+  tx_controller_testbench
+  tx_controller_unit_quickcheck_tests
+  tx_controller_expect_tests)
+ ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
+ ; ../../.. from here). Works around a ppx_expect v0.18~preview bug: it drops the
+ ; directory from the test file's path when registering a test, then rebuilds the path
+ ; at exit from the bare filename plus -source-tree-root, yielding
+ ; _build/default/<basename>, which does not exist. "." points it at the runner's cwd,
+ ; where dune copies the sources. Drop this if a later ppx_expect fixes the path handling.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries
+  core
+  hardcaml
+  mii_of_hardcaml
+  hardcaml_waveterm
+  helper_tb_functions
+  hardcaml_step_testbench
+  hardcaml_verif)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
