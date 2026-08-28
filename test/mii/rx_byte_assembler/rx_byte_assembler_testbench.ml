@@ -176,10 +176,14 @@ module Testbench = struct
      behaviours and the proportions of items in the randomized union that would comprise
      the test casese or the reset distribution
   *)
+  [@@@ocamlformat "disable"]
+
   let run_reset_mid_byte ~discarded_low ~byte =
     let testbench (handler : Step.Handler.t @ local) _initial_outputs = (* heeheheeheehaw warning 67 *)
+
       (* reset *)
       reset handler;
+
       (* form a snapshot *)
       let after_discarded_low = drive_nibble handler discarded_low in
       let after_reset =
@@ -207,7 +211,8 @@ module Testbench = struct
 
     (* execute myself *)
     run_with_timeout ~timeout:8 ~testbench
-  [@@ocamlformat "disable"]
+
+  [@@@ocamlformat "enable"]
 
   (* statistically the timeout is not guaranteed lmao - hopefully the regression rigs
      don't catch it *)
