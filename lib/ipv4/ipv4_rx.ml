@@ -32,6 +32,11 @@
    Backpressure: [l4_tready] from L4 is forwarded up to the MAC as [m_axis_tready] during
    payload; header and flush bytes are always accepted (no output to stall).
 
+   [en] is a global clock-enable for this block. While low, all state and datapath
+   registers hold, input ready and output valid are low, and stream/status pulses are
+   suppressed. The upstream source must therefore hold its current beat until [en]
+   returns, exactly as for ordinary backpressure.
+
    Endpoints are NOT parameterized here: an RX parser accepts whatever addresses arrive
    and reports them. [Make(Config)] only carries elaboration-time knobs (checksum
    enforcement, debug keep-folding).
@@ -149,8 +154,9 @@ module Make (C : Config) = struct
     let open Always in
     let open Variable in
     let rising_edge = Reg_spec.create ~clock:i.I.clock ~clear:i.I.reset () in
-    let sm = State_machine.create (module States) ~enable:vdd rising_edge in
-    let r = I_Regs.Of_always.reg ~enable:vdd rising_edge in
+    let en = i.I.en in
+    let sm = State_machine.create (module States) ~enable:en rising_edge in
+    let r = I_Regs.Of_always.reg ~enable:en rising_edge in
     I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) r;
     let w = I_Wires.Of_always.wire Signal.zero in
     I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) w;
@@ -288,17 +294,18 @@ module Make (C : Config) = struct
            @ [ r.csum_ok.value; r.crc_err.value; r.busy.value ])
       else gnd
     in
-    (* Frame-level late status: fire on the MAC's actual end-of-frame (rx_tlast, in ANY
-       state — Payload for exact-fit frames, Flush while dropping padding), combinational
-       so the verdict aligns with the byte that carries it. *)
-    let frame_done = i.I.rx_tvalid &: i.I.rx_tlast in
+    (* Frame-level late status: fire when the MAC's actual end-of-frame byte is accepted
+       (rx_tlast, in ANY state — Payload for exact-fit frames, Flush while dropping
+       padding). Keep it combinational so the verdict aligns with the byte that carries
+       it, and qualify it with ready so a stalled final byte produces exactly one pulse. *)
+    let frame_done = en &: i.I.rx_tvalid &: i.I.rx_tlast &: w.m_ready.value in
     let frame_error = i.I.rx_tuser in
-    { O.m_axis_tready = w.m_ready.value
+    { O.m_axis_tready = en &: w.m_ready.value
     ; m_tdata = i.I.rx_tdata
-    ; m_tvalid = w.tvalid.value
-    ; m_tlast = w.tlast.value
-    ; m_tfirst = w.tfirst.value
-    ; l4_start = w.tfirst.value
+    ; m_tvalid = en &: w.tvalid.value
+    ; m_tlast = en &: w.tlast.value
+    ; m_tfirst = en &: w.tfirst.value
+    ; l4_start = en &: w.tfirst.value
     ; protocol = r.protocol.value
     ; payload_length = r.payload_len.value
     ; src_ip = r.src_ip.value

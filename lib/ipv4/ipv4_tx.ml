@@ -27,6 +27,11 @@
      its stream and Ipv4_tx forwards it as [m_tlast]. Ipv4_tx does NOT re-count the
      payload; [l4_length] feeds only the IPv4 total_length/checksum.
 
+   - [en] is a global clock-enable for this block. While low, all state and datapath
+     registers hold, both sides of the ready/valid stream are quiescent, and one-cycle
+     events such as [tx_start] are suppressed. A source must hold an unaccepted request or
+     beat until [en] returns, just as it would under ordinary backpressure.
+
    Endpoints (src/dst IP) are elaboration-time constants via [Make(Config)].
 *)
 
@@ -109,8 +114,9 @@ module Make (C : Config) = struct
     let open Always in
     let open Variable in
     let rising_edge = Reg_spec.create ~clock:i.I.clock ~clear:i.I.reset () in
-    let sm = State_machine.create (module States) ~enable:vdd rising_edge in
-    let r = I_Regs.Of_always.reg ~enable:vdd rising_edge in
+    let en = i.I.en in
+    let sm = State_machine.create (module States) ~enable:en rising_edge in
+    let r = I_Regs.Of_always.reg ~enable:en rising_edge in
     I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) r;
     let w = I_Wires.Of_always.wire Signal.zero in
     I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) w;
@@ -218,10 +224,10 @@ module Make (C : Config) = struct
       reduce ~f:( |: ) (bits_lsb out_byte @ bits_lsb ip_checksum @ [ r.busy.value ])
     in
     { O.m_tdata = out_byte
-    ; m_tvalid = w.tvalid.value
-    ; m_tlast = w.tlast.value
-    ; tx_start = w.tx_start.value
-    ; l4_tready = w.l4_ready.value
+    ; m_tvalid = en &: w.tvalid.value
+    ; m_tlast = en &: w.tlast.value
+    ; tx_start = en &: w.tx_start.value
+    ; l4_tready = en &: w.l4_ready.value
     ; busy = r.busy.value
     ; keep
     }

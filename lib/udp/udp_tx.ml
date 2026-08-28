@@ -25,6 +25,10 @@
      take those from Ipv4_tx rather than duplicating IP constants here — see
      IPV4_LAYER_SPLIT_PLAN.md.
 
+   - [en] is a global clock-enable for this block. While low, all state and datapath
+     registers hold, both sides of the ready/valid stream are quiescent, and [ip_start] is
+     suppressed. A source must hold an unaccepted request or beat until [en] returns.
+
    Endpoints (src/dst port) are elaboration-time constants via [Make(Config)].
 *)
 
@@ -106,8 +110,9 @@ module Make (C : Config) = struct
     let open Always in
     let open Variable in
     let rising_edge = Reg_spec.create ~clock:i.I.clock ~clear:i.I.reset () in
-    let sm = State_machine.create (module States) ~enable:vdd rising_edge in
-    let r = I_Regs.Of_always.reg ~enable:vdd rising_edge in
+    let en = i.I.en in
+    let sm = State_machine.create (module States) ~enable:en rising_edge in
+    let r = I_Regs.Of_always.reg ~enable:en rising_edge in
     I_Regs.Of_always.apply_names ~prefix:"reg_" ~naming_op:(Scope.naming scope) r;
     let w = I_Wires.Of_always.wire Signal.zero in
     I_Wires.Of_always.apply_names ~prefix:"wire_" ~naming_op:(Scope.naming scope) w;
@@ -185,14 +190,14 @@ module Make (C : Config) = struct
       ];
     let out_byte = mux2 (sm.is Payload) i.I.payload_tdata header_byte in
     let keep = reduce ~f:( |: ) (bits_lsb out_byte @ [ r.busy.value ]) in
-    { O.ip_start = start (* forward datagram-start to L3 *)
+    { O.ip_start = en &: start (* forward datagram-start to L3 *)
     ; l4_length =
         i.I.payload_len +:. udp_hdr_len (* combinational from input: valid at [start] *)
     ; protocol = const8 ip_proto_udp
     ; m_tdata = out_byte
-    ; m_tvalid = w.tvalid.value
-    ; m_tlast = w.tlast.value
-    ; payload_tready = w.p_ready.value
+    ; m_tvalid = en &: w.tvalid.value
+    ; m_tlast = en &: w.tlast.value
+    ; payload_tready = en &: w.p_ready.value
     ; busy = r.busy.value
     ; keep
     }
