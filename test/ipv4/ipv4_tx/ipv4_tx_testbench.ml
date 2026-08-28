@@ -44,17 +44,17 @@
    completes. [drive] rejects one outright rather than timing out.
 
    Coverage (carried over from the legacy harness, plus the additions marked NEW):
-     - nominal + short + large payloads, both UDP (17) and TCP (6) protocols
-     - 1-byte payload: minimal framing, tlast lands on payload byte 0
-     - backpressure: periodic mac_tready bubbles, including an aggressive pattern that
-       stalls across header bytes and the tlast cycle
-     - tx_start fires exactly once per datagram
-     - back-to-back datagrams through one FSM instance (re-arm after completion)
-     - NEW source-side bubbles: l4_tvalid deasserted mid-payload must produce an idle
-       output beat, not a repeated byte
-     - NEW two endpoint configurations, one of them checksum-carry-forcing
-     - NEW [en] is unconnected in the RTL (findings RTL-7), pinned by running a whole
-       datagram with it tied low
+   - nominal + short + large payloads, both UDP (17) and TCP (6) protocols
+   - 1-byte payload: minimal framing, tlast lands on payload byte 0
+   - backpressure: periodic mac_tready bubbles, including an aggressive pattern that
+     stalls across header bytes and the tlast cycle
+   - tx_start fires exactly once per datagram
+   - back-to-back datagrams through one FSM instance (re-arm after completion)
+   - NEW source-side bubbles: l4_tvalid deasserted mid-payload must produce an idle output
+     beat, not a repeated byte
+   - NEW two endpoint configurations, one of them checksum-carry-forcing
+   - NEW [en] pause/resume mid-datagram, with no handshake or event escaping while low
+     (findings RTL-7)
 
    Tags: [{ "ACTIVE" ; "TEST" ; "TESTBENCH" ; "COMMON_ITEMS" }]
 *)
@@ -97,6 +97,7 @@ end
 module Observation = struct
   type t =
     { cycle : int
+    ; en : bool
     ; beat : Beat.t
     ; mac_tready : bool
     ; output : Output_snapshot.t
@@ -150,8 +151,8 @@ module Datagram_observation = struct
   ;;
 end
 
-(* Schedules over the global cycle index. [stall_every k] drops [mac_tready] on every
-   k-th cycle; 0 disables stalling, which is the free-running case. *)
+(* Schedules over the global cycle index. [stall_every k] drops [mac_tready] on every k-th
+   cycle; 0 disables stalling, which is the free-running case. *)
 let always _ = true
 
 let stall_every stride =
@@ -255,19 +256,20 @@ module Make_testbench (Endpoints : Ipv4_tx.Config) = struct
   let run_with_timeout = Fixture.run_with_timeout
 
   (* One cycle per header byte and per payload byte at best; the multiplier is headroom
-     for whatever [ready] and [source_valid] do to that. *)
+     for whatever [ready] and [source_valid] do to that. A payload byte needs both
+     schedules high at once, so with two independent periodic schedules the wait can be
+     their least common multiple - the cap is deliberately far above any schedule the
+     suites use, because its job is to turn a genuine deadlock into a message rather than
+     to be a tight bound. *)
   let budget datagrams =
-    32
-    + (8
-       * List.sum
-           (module Int)
-           datagrams
-           ~f:(fun (payload, _) ->
-             Ip_udp.Ipv4.header_length + List.length payload))
+    64
+    + (64
+       * List.sum (module Int) datagrams ~f:(fun (payload, _) ->
+         Ip_udp.Ipv4.header_length + List.length payload))
   ;;
 
-  (* Drive one datagram to completion from Idle. [en] is a parameter rather than a
-     constant because the RTL never reads it and a test says so out loud. *)
+  (* Drive one datagram to completion from Idle. [en] is a cycle schedule so the suite can
+     pause and resume the block at field boundaries as well as run it continuously. *)
   let run_sequence ~datagrams ~ready ~source_valid ~en =
     List.iter datagrams ~f:(fun (payload, _) ->
       if List.is_empty payload
@@ -296,6 +298,7 @@ module Make_testbench (Endpoints : Ipv4_tx.Config) = struct
              payload's only beat is also its [l4_tlast] beat, and yanking valid before the
              block's completing cycle would hang it. *)
           let index = Int.min source_index (length - 1) in
+          let en = en cycle_index in
           let data =
             Step.cycle
               handler
@@ -320,7 +323,7 @@ module Make_testbench (Endpoints : Ipv4_tx.Config) = struct
             else Beat.Payload (accepted_out - Ip_udp.Ipv4.header_length)
           in
           let observation =
-            { Observation.cycle = cycle_index; beat; mac_tready; output }
+            { Observation.cycle = cycle_index; en; beat; mac_tready; output }
           in
           if accepted && output.m_tlast
           then [ observation ], cycle_index + 1
@@ -333,7 +336,9 @@ module Make_testbench (Endpoints : Ipv4_tx.Config) = struct
                 ~cycle_index:(cycle_index + 1)
                 ~accepted_out:(if accepted then accepted_out + 1 else accepted_out)
                 ~source_index:
-                  (if l4_tvalid && output.l4_tready then source_index + 1 else source_index)
+                  (if l4_tvalid && output.l4_tready
+                   then source_index + 1
+                   else source_index)
                 ~launched:true
             in
             observation :: remaining, next_cycle))
@@ -360,18 +365,25 @@ module Make_testbench (Endpoints : Ipv4_tx.Config) = struct
   ;;
 end
 
-module Primary = Make_testbench (struct
-    let src_ip = [ 192; 168; 1; 10 ]
-    let dst_ip = [ 192; 168; 1; 1 ]
-  end)
+(* The functor's result type mentions its parameter (the [I] / [O] records come from
+   [Ipv4_tx.Make]), so each argument has to be a named module rather than an inline
+   struct. *)
+module Primary_endpoints = struct
+  let src_ip = [ 192; 168; 1; 10 ]
+  let dst_ip = [ 192; 168; 1; 1 ]
+end
+
+module Primary = Make_testbench (Primary_endpoints)
 
 (* Endpoints whose header words sum well past 0xFFFF, so the checksum's end-around carry
    has to happen for the golden to match. Broadcast destination, and a source with a high
    third octet, are the cheapest way to get there. *)
-module Broadcast_carry = Make_testbench (struct
-    let src_ip = [ 172; 16; 254; 1 ]
-    let dst_ip = [ 255; 255; 255; 255 ]
-  end)
+module Broadcast_carry_endpoints = struct
+  let src_ip = [ 172; 16; 254; 1 ]
+  let dst_ip = [ 255; 255; 255; 255 ]
+end
+
+module Broadcast_carry = Make_testbench (Broadcast_carry_endpoints)
 
 (* Every instantiation behind one record, so a property runs across the whole set rather
    than being written out per configuration. The observation types live outside the
@@ -385,7 +397,7 @@ type runner =
       datagrams:(int list * int) list
       -> ready:(int -> bool)
       -> source_valid:(int -> bool)
-      -> en:bool
+      -> en:(int -> bool)
       -> Datagram_observation.t list
   ; compact : Observation.t -> Compact_observation.t
   }
@@ -414,7 +426,7 @@ let primary = List.hd_exn runners
 let run_datagram
   ?(ready = always)
   ?(source_valid = always)
-  ?(en = true)
+  ?(en = always)
   runner
   ~payload
   ~protocol
@@ -425,7 +437,12 @@ let run_datagram
     raise_s [%message "expected one datagram" (List.length observations : int)]
 ;;
 
-let run_datagrams ?(ready = always) ?(source_valid = always) ?(en = true) runner ~datagrams
+let run_datagrams
+  ?(ready = always)
+  ?(source_valid = always)
+  ?(en = always)
+  runner
+  ~datagrams
   =
   runner.run_sequence ~datagrams ~ready ~source_valid ~en
 ;;
@@ -439,12 +456,12 @@ let make_payload length = List.init length ~f:(fun index -> (0x40 + index) land 
    exception so a suite can pin it rather than only the fact that something was raised. *)
 let elaborate ~src_ip ~dst_ip =
   Or_error.try_with (fun () ->
-    let module Ip =
-      Ipv4_tx.Make (struct
-        let src_ip = src_ip
-        let dst_ip = dst_ip
-      end)
+    let module Endpoints = struct
+      let src_ip = src_ip
+      let dst_ip = dst_ip
+    end
     in
+    let module Ip = Ipv4_tx.Make (Endpoints) in
     let scope = Scope.create ~flatten_design:true () in
     let (_ : Signal.t Ip.O.t) = Ip.create scope (Ip.I.Of_signal.inputs ()) in
     ())

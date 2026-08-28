@@ -1,4 +1,19 @@
-(* Bohdan Purtell University of Florida
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "ipv4_rx_legacy_assertion_test.ml" *)
+
+(* Legacy Assertion Test: Ipv4_rx
+
+   Deprecated standalone simulation and manual assertion harness, formerly
+   [test/ipv4/ipv4_rx_tb.ml]. The unit, Quickcheck, and expect suites in this directory
+   supersede it; its coverage list is preserved in [ipv4_rx_testbench.ml] and its
+   qualifier-carrying observation model is superseded by sampling [before_edge], where the
+   byte and the qualifier that describes it belong to the same cycle.
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   The original header follows.
 
    Testbench: IPv4 (L3) RX header parser (Ipv4_rx)
 
@@ -17,6 +32,8 @@
 
    The golden IPv4 header (incl. checksum) is built in OCaml, mirroring ipv4_tx_tb, so TX
    and RX agree bit-for-bit on the wire format.
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
 *)
 
 open! Core

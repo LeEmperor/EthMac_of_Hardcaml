@@ -37,10 +37,13 @@ let header_checksum_residue bytes =
     List.chunks_of header ~length:2
     |> List.map ~f:(function
       | [ high; low ] -> (high lsl 8) lor low
-      | chunk -> raise_s [%message "header is not an even number of bytes" (chunk : int list)])
+      | chunk ->
+        raise_s [%message "header is not an even number of bytes" (chunk : int list)])
   in
   let sum = List.fold words ~init:0 ~f:( + ) in
-  let rec fold sum = if sum > 0xFFFF then fold ((sum land 0xFFFF) + (sum lsr 16)) else sum in
+  let rec fold sum =
+    if sum > 0xFFFF then fold ((sum land 0xFFFF) + (sum lsr 16)) else sum
+  in
   fold sum
 ;;
 
@@ -82,13 +85,25 @@ let%test_unit "the protocol field is the runtime input, not a constant" =
     let udp = run_datagram runner ~payload:(make_payload 26) ~protocol:protocol_udp in
     let tcp = run_datagram runner ~payload:(make_payload 26) ~protocol:protocol_tcp in
     (* The protocol byte and the checksum that covers it are the only bytes that may
-       differ between two datagrams identical in every other respect. *)
-    let differing =
-      List.filteri (List.zip_exn udp.bytes tcp.bytes) ~f:(fun _ (left, right) ->
-        left <> right)
-      |> List.length
+       differ between two datagrams identical in every other respect. How many of the two
+       checksum bytes actually move depends on the protocol numbers - 17 against 6 changes
+       the low byte and, with these endpoints, not the high one - so the claim is
+       about *which* bytes may differ, not how many. *)
+    let differing_indices =
+      List.filter_mapi (List.zip_exn udp.bytes tcp.bytes) ~f:(fun index (left, right) ->
+        Option.some_if (left <> right) index)
     in
-    [%test_result: int] ~message:(runner.name ^ ": bytes differing with protocol") differing ~expect:3)
+    if not (List.mem differing_indices 9 ~equal:Int.equal)
+    then
+      raise_s
+        [%message
+          "the protocol byte did not follow its input"
+            (runner.name : string)
+            (differing_indices : int list)];
+    [%test_result: int list]
+      ~message:(runner.name ^ ": bytes outside protocol and checksum differed")
+      (List.filter differing_indices ~f:(fun index -> index < 9 || index > 11))
+      ~expect:[])
 ;;
 
 let%test_unit "total_length tracks the payload length" =
@@ -186,18 +201,31 @@ let%test_unit "back-to-back datagrams through one instance" =
       raise_s [%message "expected two datagrams" (List.length observations : int)])
 ;;
 
-(* Findings RTL-7: [en] is declared in [Ipv4_tx.I] and never read by the RTL. Pinned here
-   rather than fixed - a later gating change has to update this test, which is the point. *)
-let%test_unit "en is unconnected: a datagram streams with it tied low" =
+(* Findings RTL-7: a low [en] is backpressure in both directions and freezes the FSM. *)
+let%test_unit "en pauses and resumes a datagram without losing or repeating a byte" =
   List.iter runners ~f:(fun runner ->
     let payload = make_payload 12 in
-    let enabled = run_datagram ~en:true runner ~payload ~protocol:protocol_udp in
-    let disabled = run_datagram ~en:false runner ~payload ~protocol:protocol_udp in
-    check_datagram runner ~protocol:protocol_udp ~payload disabled;
+    let en = stall_every 3 in
+    let enabled = run_datagram runner ~payload ~protocol:protocol_udp in
+    let paused = run_datagram ~en runner ~payload ~protocol:protocol_udp in
+    check_datagram runner ~protocol:protocol_udp ~payload paused;
     [%test_result: int list]
-      ~message:(runner.name ^ ": en makes no difference")
-      disabled.bytes
-      ~expect:enabled.bytes)
+      ~message:(runner.name ^ ": pause/resume changed the datagram")
+      paused.bytes
+      ~expect:enabled.bytes;
+    if paused.cycles <= enabled.cycles
+    then
+      raise_s [%message "enable pauses did not delay the datagram" (runner.name : string)];
+    List.iter paused.trace ~f:(fun observation ->
+      if not observation.en
+      then
+        [%test_result: bool]
+          ~message:(runner.name ^ ": a handshake or event escaped while en was low")
+          (observation.output.m_tvalid
+           || observation.output.m_tlast
+           || observation.output.tx_start
+           || observation.output.l4_tready)
+          ~expect:false))
 ;;
 
 let%test_unit "endpoints must be four bytes each" =
@@ -235,13 +263,18 @@ let%test_unit "random payloads and protocols round-trip against the golden heade
 ;;
 
 (* A ready/valid schedule drawn at random rather than a fixed stride, so an interaction
-   between a bubble's phase and a field boundary is not designed out of the test. The
-   pattern is forced to contain a [true] so the run cannot deadlock. *)
-let schedule_generator =
+   between a bubble's phase and a field boundary is not designed out of the test.
+
+   Liveness is not automatic here. A payload byte moves only when [mac_tready] and
+   [l4_tvalid] are high on the *same* cycle, so two independently drawn schedules of the
+   same period can be permanently disjoint - (f f t f f) against (f f f t t) never
+   coincides, and the run deadlocks rather than failing an assertion. Fixing the two
+   periods at 5 and 7, each forced to contain a [true], makes a coincidence certain: the
+   periods are coprime, so by the remainder theorem some cycle hits a [true] in both. *)
+let schedule_generator length =
   let open Quickcheck.Generator.Let_syntax in
-  let%bind length = Int.gen_incl 2 9 in
   let%map pattern = List.gen_with_length length Bool.quickcheck_generator in
-  if List.exists pattern ~f:Fn.id then pattern else true :: pattern
+  if List.exists pattern ~f:Fn.id then pattern else true :: List.tl_exn pattern
 ;;
 
 let schedule pattern cycle = List.nth_exn pattern (cycle % List.length pattern)
@@ -259,7 +292,7 @@ let%test_unit "random backpressure and source schedules leave the datagram uncha
           runner
           ~protocol:protocol_udp
           ~payload:(make_payload 10)))
-    (Quickcheck.Generator.both schedule_generator schedule_generator)
+    (Quickcheck.Generator.both (schedule_generator 5) (schedule_generator 7))
 ;;
 
 let%test_unit "the header checksum is correct for random lengths and protocols" =

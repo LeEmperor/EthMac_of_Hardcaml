@@ -1,29 +1,43 @@
-(*
- * Bohdan Purtell
- * University of Florida
- *
- * Testbench: UDP (L4) TX header generator (Udp_tx)
- *
- * Since the IPv4/UDP split, Udp_tx emits ONLY the UDP datagram — 8-byte UDP
- * header ++ application payload — down to the IPv4 layer. This tb checks that
- * byte stream (m_tdata/m_tvalid/m_tlast) against a software golden:
- *
- *   [0..7]   UDP header (src_port, dst_port, udp_length, checksum=0)
- *   [8..]    application payload, verbatim
- *   m_tlast  asserted on the final payload byte
- *
- * The IPv4 header (and its checksum) is now Ipv4_tx's job — see ipv4_tx_tb.ml.
- * Expected output length is exactly 8 + payload_len (Udp_tx does not pad).
- *
- * Coverage:
- *   - UDP header fields, length metadata, protocol, start, busy, and framing
- *   - zero-, one-, nominal-, and larger-payload datagrams
- *   - downstream backpressure, including stalls on both forms of final beat
- *   - application-source valid bubbles
- *   - payload length latching and back-to-back datagrams without reset
- *   - reset recovery while a datagram is in flight
- *   - AXI-stream output stability and payload-ready propagation
- *)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_tx_legacy_assertion_test.ml" *)
+
+(* Legacy Assertion Test: Udp_tx
+
+   Deprecated standalone simulation and manual assertion harness, formerly
+   [test/udp/udp_tx_tb.ml]. The unit, Quickcheck, and expect suites in this directory
+   supersede it; its coverage list is preserved in [udp_tx_testbench.ml], and the manual
+   before-edge sampling it pioneered here is what [Step.O_data.before_edge] now provides
+   without the hand-managed cycle phases.
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   The original header follows.
+
+   Testbench: UDP (L4) TX header generator (Udp_tx)
+
+   Since the IPv4/UDP split, Udp_tx emits ONLY the UDP datagram — 8-byte UDP header ++
+   application payload — down to the IPv4 layer. This tb checks that byte stream
+   (m_tdata/m_tvalid/m_tlast) against a software golden:
+
+   [0..7] UDP header (src_port, dst_port, udp_length, checksum=0) [8..] application
+   payload, verbatim m_tlast asserted on the final payload byte
+
+   The IPv4 header (and its checksum) is now Ipv4_tx's job — see ipv4_tx_tb.ml. Expected
+   output length is exactly 8 + payload_len (Udp_tx does not pad).
+
+   Coverage:
+   - UDP header fields, length metadata, protocol, start, busy, and framing
+   - zero-, one-, nominal-, and larger-payload datagrams
+   - downstream backpressure, including stalls on both forms of final beat
+   - application-source valid bubbles
+   - payload length latching and back-to-back datagrams without reset
+   - reset recovery while a datagram is in flight
+   - AXI-stream output stability and payload-ready propagation
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
+*)
 
 open! Core
 open! Hardcaml

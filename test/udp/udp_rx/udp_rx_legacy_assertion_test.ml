@@ -1,10 +1,26 @@
-(* Bohdan Purtell University of Florida
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_rx_legacy_assertion_test.ml" *)
+
+(* Legacy Assertion Test: Udp_rx
+
+   Deprecated standalone simulation and manual assertion harness, formerly
+   [test/udp/udp_rx_tb.ml]. The unit, Quickcheck, and expect suites in this directory
+   supersede it; its coverage list is preserved in [udp_rx_testbench.ml] and its
+   qualifier-carrying observation model is superseded by sampling [before_edge].
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   The original header follows.
 
    Testbench: UDP (L4) RX header parser (Udp_rx)
 
    Drives the UDP datagram byte stream exactly as Ipv4_rx presents it and checks header
    stripping, metadata, filtering, backpressure, malformed datagrams, and error
    forwarding.
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
 *)
 
 open! Core
