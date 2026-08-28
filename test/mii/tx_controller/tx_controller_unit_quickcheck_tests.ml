@@ -154,22 +154,34 @@ let%test_unit "mac_byte_sel indexes each header field from zero" =
   [%test_result: int list] (selectors_in State.Eth_type) ~expect:[ 0; 1 ]
 ;;
 
-let%test_unit "crc_en is asserted on the last payload byte and the first three FCS bytes" =
-  (* [crc_en] is a wire, not a register, so it reads as the enable for the cycle it
-     appears on. The final FCS cycle leaves it low: there is nothing left to accumulate
-     once the last FCS byte is on the wire.
-
-     This output is dead in the current integration - [mac_top] gates [Tx_crc] off [state]
-     directly and never reads [crc_en] - so this is a behavioral freeze, not a check
-     against a consumer. See the testbench header. *)
-  let observation = Testbench.run_frame ~payload_length:46 in
-  let enabled_states =
-    List.filter_map observation.trace ~f:(fun (item : Observation.t) ->
-      Option.some_if item.output.crc_en item.output.state)
+let%test_unit "crc_en marks exactly the FCS-covered fields" =
+  (* The FCS covers everything between the SFD and the FCS itself: the two MACs, the
+     ethertype and the payload, padding included. [mac_top] gates [Tx_crc.data_valid] with
+     this, so a byte emitted with [crc_en] low is a byte the receiver's CRC will not see -
+     which makes the preamble/SFD and Fcs exclusions the substance of the check, not the
+     inclusions. *)
+  let covered = function
+    | State.Dst_mac | State.Src_mac | State.Eth_type | State.Payload -> true
+    | State.Idle | State.Preamble | State.Sfd | State.Fcs -> false
   in
-  [%test_result: State.t list]
-    enabled_states
-    ~expect:[ State.Payload; State.Fcs; State.Fcs; State.Fcs ]
+  List.iter [ 0; 10; 46; 100 ] ~f:(fun payload_length ->
+    let observation = Testbench.run_frame ~payload_length in
+    List.iter observation.trace ~f:(fun (item : Observation.t) ->
+      [%test_result: bool] item.output.crc_en ~expect:(covered item.output.state)))
+;;
+
+let%test_unit "crc_en covers a byte count that matches the frame layout" =
+  (* The same property counted rather than pointwise: the CRC must see the 14 header bytes
+     plus the padded payload, and nothing else. This is what would break if [crc_en] ever
+     drifted by a cycle at a state boundary. *)
+  List.iter [ 0; 10; 46; 100 ] ~f:(fun payload_length ->
+    let observation = Testbench.run_frame ~payload_length in
+    let covered_cycles =
+      List.count observation.trace ~f:(fun (item : Observation.t) -> item.output.crc_en)
+    in
+    [%test_result: int]
+      covered_cycles
+      ~expect:(14 + Int.max payload_length Testbench.minimum_payload_length))
 ;;
 
 let%test_unit "a start pulse without a buffered frame does not launch" =

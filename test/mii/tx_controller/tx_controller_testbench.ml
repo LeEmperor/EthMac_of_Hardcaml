@@ -31,13 +31,14 @@
    reaches index 45. So the payload phase always occupies max(length, 46) cycles, and the
    whole frame is 7 + 1 + 6 + 6 + 2 + max(length, 46) + 4 bytes.
 
-   [crc_en] is currently dead. [mac_top] does not consume it: it derives its own
-   [crc_active] from [state] (3..6) and ties [Tx_crc.en] to ~(state == Idle). The
-   controller's [crc_en] is still an output of this block, so the suite freezes what it
-   does - assert on the last payload cycle and the first three FCS cycles - rather than
-   leaving it unobserved. Anything that starts consuming it should be checked against
-   [Tx_crc]'s enable semantics first, since a low [en] there reloads the accumulator
-   rather than stalling it.
+   [crc_en] is the FCS window. It is high for exactly the bytes the FCS covers - the two
+   MACs, the ethertype and the payload - and low through the preamble, the SFD and the Fcs
+   state itself. [mac_top] gates [Tx_crc.data_valid] with it, so the suite is checking a
+   real consumer's contract: a byte emitted with [crc_en] low is a byte the receiver's CRC
+   will not see. Note that [crc_en] is not [Tx_crc.en], which [mac_top] ties to [tx_busy]:
+   a low [en] there *reloads* the accumulator rather than stalling it, so driving it from
+   [crc_en] would clear the CRC during the Fcs state, while its own result is being read
+   out.
 
    Zero-length payloads. A datagram with no payload bytes reaches Payload with the FIFO
    already empty and never presents a byte carrying [payload_last], so the registered
