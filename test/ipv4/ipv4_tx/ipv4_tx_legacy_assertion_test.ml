@@ -1,40 +1,55 @@
-(*
- * Bohdan Purtell
- * University of Florida
- *
- * Testbench: IPv4 (L3) TX header generator (Ipv4_tx)
- *
- * Feeds a synthetic layer-4 byte stream into Ipv4_tx and checks that it prepends
- * the correct 20-byte IPv4 header and passes the L4 payload through unchanged:
- *
- *   [0..19]  IPv4 header (version/IHL, total_length, TTL/proto, checksum, src/dst IP)
- *   [20..]   the L4 payload, verbatim
- *   m_tlast  forwarded from the L4 stream's l4_tlast on the final byte
- *
- * The golden header checksum is recomputed in OCaml (one's-complement sum,
- * end-around carry, complement) so an RTL checksum bug shows up as a mismatch on
- * bytes [10..11]. total_length = 20 + l4_length; protocol is the runtime input.
- *
- * Observation model: Ipv4_tx's stream outputs are Mealy, and Cyclesim.cycle
- * leaves the output refs POST-edge. Header bytes and payload[0..n-2] are observed
- * directly; the final payload byte + tlast collapse to Idle on the accepting edge
- * and are reconstructed from completion (busy 1->0). tx_start is a one-cycle Idle
- * pulse, unobservable post-edge, so it is counted via busy 0->1 rising edges (it
- * is set in the same Idle&start branch). See [drive] for the full rationale.
- *
- * Coverage:
- *   - nominal + short + large payloads, both UDP (17) and TCP (6) protocols
- *   - 1-byte payload: minimal framing, tlast lands on payload byte 0
- *   - backpressure: periodic mac_tready bubbles, including an aggressive pattern
- *     that stalls across header bytes and the tlast cycle
- *   - tx_start fires exactly once per datagram
- *   - back-to-back datagrams through one FSM instance (re-arm after completion)
- *
- * Not tested (by design): a 0-byte L4 payload. Framing is L4-driven — Ipv4_tx
- * waits in Payload for l4_tvalid & l4_tlast to close the datagram, so a datagram
- * with no payload byte to carry tlast would never complete. Every real L4
- * (UDP/TCP) always supplies at least its own header bytes.
- *)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "ipv4_tx_legacy_assertion_test.ml" *)
+
+(* Legacy Assertion Test: Ipv4_tx
+
+   Deprecated standalone simulation and manual assertion harness, formerly
+   [test/ipv4/ipv4_tx_tb.ml]. The unit, Quickcheck, and expect suites in this directory
+   supersede it; its coverage list is preserved in [ipv4_tx_testbench.ml] and its
+   observation model is superseded by sampling [before_edge], where the final payload
+   byte, its [m_tlast] and the [tx_start] pulse are all directly visible.
+
+   Compiled by [dune build] so it keeps type-checking against the RTL, never run by
+   [dune runtest].
+
+   The original header follows.
+
+   Testbench: IPv4 (L3) TX header generator (Ipv4_tx)
+
+   Feeds a synthetic layer-4 byte stream into Ipv4_tx and checks that it prepends
+   the correct 20-byte IPv4 header and passes the L4 payload through unchanged:
+
+     [0..19]  IPv4 header (version/IHL, total_length, TTL/proto, checksum, src/dst IP)
+     [20..]   the L4 payload, verbatim
+     m_tlast  forwarded from the L4 stream's l4_tlast on the final byte
+
+   The golden header checksum is recomputed in OCaml (one's-complement sum,
+   end-around carry, complement) so an RTL checksum bug shows up as a mismatch on
+   bytes [10..11]. total_length = 20 + l4_length; protocol is the runtime input.
+
+   Observation model: Ipv4_tx's stream outputs are Mealy, and Cyclesim.cycle
+   leaves the output refs POST-edge. Header bytes and payload[0..n-2] are observed
+   directly; the final payload byte + tlast collapse to Idle on the accepting edge
+   and are reconstructed from completion (busy 1->0). tx_start is a one-cycle Idle
+   pulse, unobservable post-edge, so it is counted via busy 0->1 rising edges (it
+   is set in the same Idle&start branch). See [drive] for the full rationale.
+
+   Coverage:
+     - nominal + short + large payloads, both UDP (17) and TCP (6) protocols
+     - 1-byte payload: minimal framing, tlast lands on payload byte 0
+     - backpressure: periodic mac_tready bubbles, including an aggressive pattern
+       that stalls across header bytes and the tlast cycle
+     - tx_start fires exactly once per datagram
+     - back-to-back datagrams through one FSM instance (re-arm after completion)
+
+   Not tested (by design): a 0-byte L4 payload. Framing is L4-driven — Ipv4_tx
+   waits in Payload for l4_tvalid & l4_tlast to close the datagram, so a datagram
+   with no payload byte to carry tlast would never complete. Every real L4
+   (UDP/TCP) always supplies at least its own header bytes.
+
+   Tags: [{ "DEPRECATED" ; "ASSERTION_TEST" }]
+*)
 
 open! Core
 open! Hardcaml
