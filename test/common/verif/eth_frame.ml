@@ -28,6 +28,8 @@ type t =
 let preamble_byte = 0x55
 let sfd_byte = 0xD5
 
+[@@@ocamlformat "disable"]
+
 (* on todady's episode of Bo vs the formatter *)
 let create
   ?(preamble_length     = 7)
@@ -61,8 +63,8 @@ let create
   ; eth_type
   ; payload
   }
-
-[@@ocamlformat "disable"]
+;;
+[@@@ocamlformat "enable"]
 
 let byte_count t = t.preamble_length + 1 + 6 + 6 + 2 + List.length t.payload
 

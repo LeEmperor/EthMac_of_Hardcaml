@@ -14,6 +14,8 @@ open! Core
 
 let byte : int Quickcheck.Generator.t = Int.gen_incl 0x00 0xFF
 
+[@@@ocamlformat "disable"]
+
 let byte_list
   ?(min_length = 1)
   ?(max_length = 16) ()
@@ -25,7 +27,8 @@ let byte_list
   (* randomized sequence creator; might need seeding passthroughs but we'll do that later *)
   let%bind length = Int.gen_incl min_length max_length in
   List.gen_with_length length byte
-  [@@ocamlformat "disable"]
+;;
+[@@@ocamlformat "enable"]
 
 (* goons v1 *)
 let mac_address : int list Quickcheck.Generator.t = List.gen_with_length 6 byte
@@ -36,6 +39,8 @@ let port : int Quickcheck.Generator.t = Int.gen_incl 0x0000 0xFFFF
 let payload_length ?(min_length = 0) ?(max_length = 64) () : int Quickcheck.Generator.t =
   Int.gen_incl min_length max_length
 ;;
+
+[@@@ocamlformat "disable"]
 
 (* randomize, and then construct into an Eth_frame "object" *)
 let eth_frame
@@ -64,4 +69,5 @@ let eth_frame
 
   (* instantiate based on the common infra we just wrote for the Eth_frame abstractions *)
   Eth_frame.create ~preamble_length ~destination_mac ~source_mac ~eth_type ~payload ()
-  [@@ocamlformat "disable"]
+;;
+[@@@ocamlformat "enable"]

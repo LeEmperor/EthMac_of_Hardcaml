@@ -25,10 +25,12 @@ open! Core
 let hi8 value = (value lsr 8) land 0xFF
 let lo8 value = value land 0xFF
 let w16 hi lo = (hi lsl 8) lor lo
-
 (* 1s-complement sum with end-around carry, then complemented. Definitely re-usable later
    on.
 *)
+
+[@@@ocamlformat "disable"]
+
 let ones_complement_checksum words =
   let sum = List.fold words ~init:0 ~f:( + ) in
   let rec fold sum =
@@ -44,7 +46,8 @@ let ones_complement_checksum words =
     Ivan would be proud.
   *)
   lnot (fold sum) land 0xFFFF
-  [@@ocamlformat "disable"]
+;;
+[@@@ocamlformat "enable"]
 
 module Ipv4 = struct
   let header_length = 20
