@@ -1,10 +1,11 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler_legacy_assertion_test.ml" *)
 
 (* Legacy Assertion Test: Rx_byte_assembler
 
-   Deprecated standalone simulation and manual assertion harness. The unit,
-   Quickcheck, and expect test suites supersede this test.
+   Deprecated standalone simulation and manual assertion harness. The unit, Quickcheck,
+   and expect test suites supersede this test.
 
    Don't use anything here lmao; eventually will have dunetest de-active this modules
    usage, but I think some of the integration suites use it elsewhere.
@@ -27,13 +28,11 @@ let () =
   let o = Cyclesim.outputs sim in
   let ( <-- ) r v = r := Bits.of_int_trunc ~width:(Bits.width !r) v in
   let cycle () = Cyclesim.cycle sim in
-
   let all_ok = ref true in
   let check name cond =
     if not cond then all_ok := false;
     printf "  %-40s: %s\n" name (if cond then "PASS" else "FAIL")
   in
-
   (* reset *)
   i.Rx_byte_assembler.I.reset <-- 1;
   i.en <-- 0;
@@ -41,9 +40,8 @@ let () =
   cycle ();
   i.reset <-- 0;
   i.en <-- 1;
-
-  (* Feed a byte as (lo nibble, hi nibble) — MII order — and assert the assembler
-     stays quiet mid-pair, then strobes byte_valid with the reassembled byte. *)
+  (* Feed a byte as (lo nibble, hi nibble) — MII order — and assert the assembler stays
+     quiet mid-pair, then strobes byte_valid with the reassembled byte. *)
   let send_byte_check byte =
     let lo = byte land 0xF in
     let hi = (byte lsr 4) land 0xF in
@@ -60,13 +58,11 @@ let () =
       (Bits.to_int_trunc !(o.byte_out) = byte)
   in
   List.iter [ 0xAB; 0x12; 0xFF; 0x00; 0x5D ] ~f:send_byte_check;
-
   (* en low: assembler must not latch a new nibble or raise byte_valid *)
   i.en <-- 0;
   i.rx_data <-- 0x7;
   cycle ();
   check "en=0: byte_valid stays 0" (not (Bits.to_bool !(o.byte_valid)));
-
   printf "\n=== %s ===\n" (if !all_ok then "ALL PASS" else "FAILURES PRESENT");
   print_endline "=== SIMULATION COMPLETE ===";
   if not !all_ok then exit 1
