@@ -5,39 +5,39 @@ open! Udp_of_hardcaml
 open! Uart_of_hardcaml
 open! Signal
 
-(* RTL generators, one subcommand per emittable artifact. Pick a target on the
-   command line instead of comment-toggling this file, e.g.:
-
-     dune exec lib/common/generate.exe -- mac
-     dune exec lib/common/generate.exe -- udp
-     dune exec lib/common/generate.exe -- validation
-     dune exec lib/common/generate.exe -- udp-tx-validation
-     dune exec lib/common/generate.exe -- udp-rx-validation
-     dune exec lib/common/generate.exe -- udp-loopback-validation
-
-   Targets:
-     mac                    standalone Ethernet MAC        -> hardcaml_eth_mac.v
-     udp                    UDP-over-MAC stack             -> hardcaml_udp_with_mac.v
-     validation             board MAC harness (bare MAC, both dirs) -> validation/mac_top_validation_harness.v
-     udp-tx-validation      board UDP TX harness (fpga->laptop, btn[3]) -> validation/udp_mac_top_validation_harness.v
-     udp-rx-validation      board UDP RX harness (laptop->fpga, 1B/s drain) -> validation/udp_rx_mac_top_validation_harness.v
-     udp-duplex-validation  board full-duplex UDP harness, DECOUPLED TX+RX -> validation/udp_duplex_validation_harness.v
-     udp-loopback-validation board echo/loopback UDP harness, RX->TX bridge -> validation/udp_loopback_validation_harness.v
-
-   Naming: the UDP full-duplex tops are distinguished by coupling --
-     duplex   = independent TX + RX side-by-side on one Mac_top (no coupling)
-     loopback = RX->TX bridge (echo); host-asserted RX validation.
-
-   The board-harness targets instantiate the same tops that used to live in
-   validation/generate_validation.exe (now folded in here). *)
+(*
+ * RTL generators, one subcommand per emittable artifact. Pick a target on the
+ * command line instead of comment-toggling this file, e.g.:
+ *
+ *   dune exec lib/common/generate.exe -- mac
+ *   dune exec lib/common/generate.exe -- udp
+ *   dune exec lib/common/generate.exe -- validation
+ *   dune exec lib/common/generate.exe -- udp-tx-validation
+ *   dune exec lib/common/generate.exe -- udp-rx-validation
+ *   dune exec lib/common/generate.exe -- udp-loopback-validation
+ *
+ * Targets:
+ *   mac                    standalone Ethernet MAC        -> hardcaml_eth_mac.v
+ *   udp                    UDP-over-MAC stack             -> hardcaml_udp_with_mac.v
+ *   validation             board MAC harness (bare MAC, both dirs) -> validation/mac_top_validation_harness.v
+ *   udp-tx-validation      board UDP TX harness (fpga->laptop, btn[3]) -> validation/udp_mac_top_validation_harness.v
+ *   udp-rx-validation      board UDP RX harness (laptop->fpga, 1B/s drain) -> validation/udp_rx_mac_top_validation_harness.v
+ *   udp-duplex-validation  board full-duplex UDP harness, DECOUPLED TX+RX -> validation/udp_duplex_validation_harness.v
+ *   udp-loopback-validation board echo/loopback UDP harness, RX->TX bridge -> validation/udp_loopback_validation_harness.v
+ *
+ * Naming: the UDP full-duplex tops are distinguished by coupling --
+ *   duplex   = independent TX + RX side-by-side on one Mac_top (no coupling)
+ *   loopback = RX->TX bridge (echo); host-asserted RX validation.
+ *
+ * The board-harness targets instantiate the same tops that used to live in
+ * validation/generate_validation.exe (now folded in here).
+ *)
 
 module Circ_mac = Circuit.With_interface (Mac_top.I) (Mac_top.O)
 module Circ_udp = Circuit.With_interface (Udp_mac_top.I) (Udp_mac_top.O)
 
 module Circ_validation =
-  Circuit.With_interface
-    (Mac_top_validation_harness.I)
-    (Mac_top_validation_harness.O)
+  Circuit.With_interface (Mac_top_validation_harness.I) (Mac_top_validation_harness.O)
 
 module Circ_udp_validation =
   Circuit.With_interface
@@ -59,9 +59,9 @@ module Circ_udp_loopback_validation =
     (Udp_loopback_validation_harness.I)
     (Udp_loopback_validation_harness.O)
 
-(* Emit [circ] as hierarchical Verilog at [path]. [path] is resolved against the
-   repo root: DUNE_SOURCEROOT is set by [dune exec] so the RTL always lands at a
-   stable location rather than wherever the binary happened to run. *)
+(* Emit [circ] as hierarchical Verilog at [path]. [path] is resolved against the repo
+   root: DUNE_SOURCEROOT is set by [dune exec] so the RTL always lands at a stable
+   location rather than wherever the binary happened to run. *)
 let emit ~path circ =
   let rtl = Rtl.full_hierarchy (Rtl.create Verilog [ circ ]) in
   let root = Option.value (Sys.getenv "DUNE_SOURCEROOT") ~default:"." in

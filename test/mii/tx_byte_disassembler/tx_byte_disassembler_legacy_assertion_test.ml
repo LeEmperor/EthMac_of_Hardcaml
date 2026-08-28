@@ -19,7 +19,7 @@ open! Mii_of_hardcaml
 (* open! Hardcaml_waveterm *)
 (* open! Helper_tb_functions *)
 
-let () = print_endline "=== Running MAC TX Byte Disassembler Testbench ==="
+(* let () = print_endline "=== Running MAC TX Byte Disassembler Testbench ===" *)
 
 (* let waveform_enabled = *)
 (*   Array.exists (Sys.get_argv ()) ~f:(String.equal "--waveform") *)

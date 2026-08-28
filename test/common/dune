@@ -6,8 +6,8 @@
   (pps ppx_hardcaml ppx_jane))
  (lint
   (pps ppx_js_style))
- (flags (:standard -w -27-57-33-34-35-40-63-47-26))
- )
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
 
 (executables
  (names clk_div_tb second_pulse_tb)
@@ -17,5 +17,5 @@
   (pps ppx_hardcaml ppx_jane))
  (lint
   (pps ppx_js_style))
- (flags (:standard -w -27-57-33-34-35-40-63-47-26))
-)
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
