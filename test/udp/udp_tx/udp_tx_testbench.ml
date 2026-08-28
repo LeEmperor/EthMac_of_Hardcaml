@@ -15,12 +15,13 @@
    [8 + payload_length] bytes.
 
    Sampling. [before_edge]. Every stream output is an [Always.Variable.wire] driven off
-   the current state, or a mux off it, and [ip_start] / [l4_length] / [protocol] are wired
-   combinationally from the inputs, so each is what the block was driving during the
-   cycle. The superseded [udp_tx_legacy_assertion_test.ml] already sampled the before-edge
-   interface by hand ([Cyclesim.outputs ~clock_edge:Side.Before] plus a manual
-   [cycle_before_clock_edge] / [cycle_at_clock_edge] split); [Step.O_data.before_edge] is
-   the same sample without the manual phase management.
+   the current state, or a mux off it. [ip_start] and [protocol] are combinational;
+   [l4_length] bypasses its latch while [start] is high and reads the latch afterward.
+   Each sample is therefore what the block was driving during the cycle. The superseded
+   [udp_tx_legacy_assertion_test.ml] already sampled the before-edge interface by hand
+   ([Cyclesim.outputs ~clock_edge:Side.Before] plus a manual [cycle_before_clock_edge] /
+   [cycle_at_clock_edge] split); [Step.O_data.before_edge] is the same sample without the
+   manual phase management.
 
    Ready and valid schedules take the cycle index, the index of the datagram byte waiting
    to be accepted, and how many cycles have already been spent on that byte. The last of
@@ -33,9 +34,10 @@
 
    Length latching. [payload_len] is latched into [len_latch] at [start], and the header's
    udp_length is built from the latch - so changing the input mid-datagram must not move
-   the header. [l4_length], by contrast, is wired combinationally from the *input*
-   [payload_len] rather than from the latch, so it is only meaningful on the start cycle
-   (findings RTL-10). Both halves of that are asserted rather than assumed.
+   the header. [l4_length] uses the live input on that start cycle (the new latch value is
+   not visible until the edge) and the same latch thereafter, so it remains the datagram's
+   length even if the input moves (resolved findings RTL-10). Both the bypass and the hold
+   are asserted rather than assumed.
 
    Ports are elaboration-time constants, so the suite is a [Make_testbench] functor over
    them and [runners] carries both instantiations. [Primary] is the pair the legacy

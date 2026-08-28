@@ -159,11 +159,10 @@ let%test_unit "payload_len is latched at start" =
     check_run ~payload_len_after_start:0 runner ~payload:(make_payload 12))
 ;;
 
-(* Findings RTL-10. [l4_length] is wired from the *input* [payload_len], not from the
-   latch, so it tracks the input for the whole datagram and is only meaningful on the
-   start cycle. [Ipv4_tx] latches it at its own start, so the composition is correct; this
-   pins the port's contract rather than proposing a change. *)
-let%test_unit "l4_length follows the input rather than the latch" =
+(* Findings RTL-10. [l4_length] bypasses [len_latch] on the start cycle, so [Ipv4_tx] sees
+   the new length at the edge that latches it, then comes from the latch for the rest of
+   the datagram. *)
+let%test_unit "l4_length holds the start-cycle length for the whole datagram" =
   let payload = make_payload 12 in
   let observation = run_datagram ~payload_len_after_start:0x30 primary ~payload in
   [%test_result: int option]
@@ -177,9 +176,9 @@ let%test_unit "l4_length follows the input rather than the latch" =
     |> List.dedup_and_sort ~compare:Int.compare
   in
   [%test_result: int list]
-    ~message:"after start it follows the mutated input"
+    ~message:"after start it holds the latched length"
     after_start
-    ~expect:[ 0x30 + header_length ]
+    ~expect:[ header_length + List.length payload ]
 ;;
 
 let%test_unit "back-to-back datagrams through one instance" =

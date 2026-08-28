@@ -169,8 +169,8 @@ let%expect_test "reset mid-datagram, then a fresh one" =
       ((ip_start false) (l4_length 28) (protocol 17) (m_tdata 18) (m_tvalid true)
        (m_tlast false) (payload_tready false) (busy true)))
      (during_reset
-      ((ip_start false) (l4_length 8) (protocol 17) (m_tdata 53) (m_tvalid false)
-       (m_tlast false) (payload_tready false) (busy true)))
+      ((ip_start false) (l4_length 28) (protocol 17) (m_tdata 53)
+       (m_tvalid false) (m_tlast false) (payload_tready false) (busy true)))
      (after_reset
       ((ip_start false) (l4_length 8) (protocol 17) (m_tdata 18) (m_tvalid false)
        (m_tlast false) (payload_tready false) (busy false))))

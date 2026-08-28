@@ -243,12 +243,10 @@ let%test_unit "a payload shorter than total_length raises crc_error" =
       ~expect:false)
 ;;
 
-(* Findings RTL-9. [has_payload] is [total_len >= 20], so a datagram whose total_length is
-   exactly the header length still enters Payload - with [payload_rem = 0], which the
-   [payload_rem = 1] test for m_tlast never matches. The frame's [rx_tlast] was consumed
-   in Header, so nothing is left to drive the state machine out again and the block stays
-   busy forever. Pinned rather than fixed: the test is what a fix has to change. *)
-let%test_unit "an empty datagram (total_length = 20) strands the parser in Payload" =
+(* Findings RTL-9. A header-only datagram has no payload beat on which to assert
+   [m_tfirst], so it reports the zero-length metadata with a standalone [l4_start] pulse
+   and returns directly to Idle. *)
+let%test_unit "an empty datagram (total_length = 20) reports metadata and returns idle" =
   List.iter runners ~f:(fun runner ->
     let frame = ip_header ~protocol:protocol_udp ~payload_length:0 () in
     let observation = run_frame runner ~frame in
@@ -256,13 +254,23 @@ let%test_unit "an empty datagram (total_length = 20) strands the parser in Paylo
       ~message:(runner.name ^ ": nothing reaches L4")
       observation.payload
       ~expect:[];
+    [%test_result: Metadata.t option]
+      ~message:(runner.name ^ ": zero-length metadata at l4_start")
+      observation.metadata
+      ~expect:
+        (Some
+           { protocol = protocol_udp
+           ; payload_length = 0
+           ; src_ip = ip32 src_ip
+           ; dst_ip = ip32 dst_ip
+           });
     [%test_result: bool]
-      ~message:(runner.name ^ ": still busy after the frame (RTL-9)")
+      ~message:(runner.name ^ ": returned to idle (RTL-9)")
       observation.settled.busy
-      ~expect:true)
+      ~expect:false)
 ;;
 
-let%test_unit "l4_start and m_tfirst are the same signal" =
+let%test_unit "l4_start accompanies m_tfirst on nonempty datagrams" =
   List.iter runners ~f:(fun runner ->
     let observation =
       run_frame

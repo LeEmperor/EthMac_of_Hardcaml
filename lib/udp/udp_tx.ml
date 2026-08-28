@@ -192,7 +192,8 @@ module Make (C : Config) = struct
     let keep = reduce ~f:( |: ) (bits_lsb out_byte @ [ r.busy.value ]) in
     { O.ip_start = en &: start (* forward datagram-start to L3 *)
     ; l4_length =
-        i.I.payload_len +:. udp_hdr_len (* combinational from input: valid at [start] *)
+        mux2 start (i.I.payload_len +:. udp_hdr_len) udp_length
+        (* Bypass the latch on [start], before its new value reaches [udp_length]. *)
     ; protocol = const8 ip_proto_udp
     ; m_tdata = out_byte
     ; m_tvalid = en &: w.tvalid.value

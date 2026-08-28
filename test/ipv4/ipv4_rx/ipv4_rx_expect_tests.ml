@@ -154,8 +154,10 @@ let%expect_test "the frames that never reach layer 4" =
     ((payload "") (tfirst_index -1) (tlast_index -1) (metadata ())
      (frame_done_pulses 1) (checksum_ok false) (crc_error false) (busy false))
     "total_length = 20, no payload (RTL-9)"
-    ((payload "") (tfirst_index -1) (tlast_index -1) (metadata ())
-     (frame_done_pulses 1) (checksum_ok true) (crc_error false) (busy true))
+    ((payload "") (tfirst_index -1) (tlast_index -1)
+     (metadata
+      (((protocol 17) (payload_length 0) (src_ip 3232235786) (dst_ip 167772167))))
+     (frame_done_pulses 1) (checksum_ok true) (crc_error false) (busy false))
     |}]
 ;;
 

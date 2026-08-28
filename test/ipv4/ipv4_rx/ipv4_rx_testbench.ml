@@ -14,14 +14,15 @@
    the DUT's job is to hand back the L4 payload alone.
 
    Sampling. [before_edge]. [m_tdata] is [rx_tdata] wired straight through and the
-   qualifiers around it ([m_tvalid], [m_tlast], [m_tfirst], [l4_start], [m_axis_tready])
-   are [Always.Variable.wire]s driven off the current state, so the byte and the qualifier
+   qualifiers around it ([m_tvalid], [m_tlast], [m_tfirst], [m_axis_tready]) are
+   [Always.Variable.wire]s driven off the current state, so the byte and the qualifier
    that describes it belong to the same cycle. The metadata registers ([protocol],
    [payload_length], [src_ip], [dst_ip], [checksum_ok]) latch at the header-end edge,
-   which is before the first payload cycle, so reading them at [before_edge] of the
-   [l4_start] cycle is reading settled values. [crc_error] latches from [rx_tuser] at
-   [rx_tlast] and is therefore only settled *after* the frame: it is read from the drain
-   cycles, not from the trace.
+   which is before [l4_start]: the first payload cycle for a nonempty datagram, or a
+   registered pulse in the first drain cycle for a header-only one. Reading them at
+   [before_edge] of that cycle therefore reads settled values. [crc_error] latches from
+   [rx_tuser] at [rx_tlast] and is only settled *after* the frame, so it too is read from
+   the drain cycles.
 
    This is what the superseded [ipv4_rx_legacy_assertion_test.ml] spent its longest
    comment on. Sampling [Cyclesim]'s post-edge refs put the qualifier one cycle ahead of
@@ -53,7 +54,7 @@
    - NEW IHL > 5 (a header with options) is flushed even under ethertype 0x0800
    - NEW truncated frames: rx_tlast inside the header, and a payload shorter than
      total_length, both abort rather than hang
-   - NEW an empty datagram (total_length = 20) emits no L4 byte
+   - NEW an empty datagram (total_length = 20) emits no L4 byte but does report metadata
    - NEW source-side bubbles as well as sink-side backpressure
    - NEW frame_done is combinational and handshake-qualified (findings RTL-8)
    - NEW [en] pause/resume mid-frame, including upstream backpressure (findings RTL-7)
@@ -382,23 +383,29 @@ module Make_testbench (Policy : Policy) = struct
       in
       (* The late status - [crc_error], [busy] - only settles after the edge that consumed
          the final byte, so it is read from idle cycles rather than from the trace. *)
-      let rec drain (handler : Step.Handler.t @ local) ~remaining ~last =
+      let rec drain (handler : Step.Handler.t @ local) ~remaining ~last ~metadata =
         if remaining = 0
-        then last
+        then last, metadata
         else (
           let output =
             Step.cycle handler (idle_inputs ~eth_type)
             |> Step.O_data.before_edge
             |> snapshot
           in
-          drain handler ~remaining:(remaining - 1) ~last:output)
+          let metadata =
+            match metadata with
+            | Some _ -> metadata
+            | None -> Option.some_if output.l4_start (Metadata.of_snapshot output)
+          in
+          drain handler ~remaining:(remaining - 1) ~last:output ~metadata)
       in
       let trace = drive handler ~cycle_index:0 ~rx_index:0 ~emitted:0 in
-      let settled =
+      let settled, drain_metadata =
         drain
           handler
           ~remaining:drain_cycles
           ~last:(List.last_exn trace).Observation.output
+          ~metadata:None
       in
       let moved =
         List.filter trace ~f:(fun (observation : Observation.t) ->
@@ -416,10 +423,12 @@ module Make_testbench (Policy : Policy) = struct
             observation.output.m_tfirst)
           |> Option.value_map ~default:(-1) ~f:fst
       ; metadata =
-          List.find trace ~f:(fun (observation : Observation.t) ->
-            observation.output.l4_start)
-          |> Option.map ~f:(fun (observation : Observation.t) ->
-            Metadata.of_snapshot observation.output)
+          (match
+             List.find trace ~f:(fun (observation : Observation.t) ->
+               observation.output.l4_start)
+           with
+           | Some observation -> Some (Metadata.of_snapshot observation.output)
+           | None -> drain_metadata)
       ; frame_done_pulses =
           List.count trace ~f:(fun (observation : Observation.t) ->
             observation.output.frame_done)
