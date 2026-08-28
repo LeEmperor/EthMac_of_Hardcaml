@@ -1,3 +1,8 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_duplex_mac_top_testbench.ml" *)
+(* Reusable RX-only, TX-only, and concurrent full-duplex integration scenarios. *)
+
 (*
  * Full-duplex UDP-over-MAC integration testbench (Harness #1 top).
  *
@@ -22,9 +27,11 @@ open! Core
 open! Hardcaml
 open! Udp_of_hardcaml
 open! Helper_tb_functions
-open! Alcotest
+open! Hardcaml_verif
 
-let () = print_endline "=== Running UDP Duplex (full-duplex) Integration Testbench ==="
+(* Inline tests are silent on success; the legacy executable retains its progress log. *)
+let printf format = Printf.ifprintf Out_channel.stdout format
+let print_endline _ = ()
 
 module Sim = Cyclesim.With_interface (Udp_duplex_mac_top.I) (Udp_duplex_mac_top.O)
 
@@ -37,26 +44,10 @@ let dst_port = 0x1235
 (* ── byte builders (network order) ──────────────────────────────────────────── *)
 let hi8 x = (x lsr 8) land 0xFF
 let lo8 x = x land 0xFF
-let w16 hi lo = ((hi land 0xFF) lsl 8) lor (lo land 0xFF)
 let ip32 bytes = List.fold bytes ~init:0 ~f:(fun acc b -> (acc lsl 8) lor (b land 0xFF))
 
 let ip_checksum ~total_length =
-  let words =
-    [ 0x4500
-    ; total_length
-    ; 0x0000
-    ; 0x4000
-    ; 0x4011
-    ; 0x0000
-    ; w16 (List.nth_exn src_ip 0) (List.nth_exn src_ip 1)
-    ; w16 (List.nth_exn src_ip 2) (List.nth_exn src_ip 3)
-    ; w16 (List.nth_exn dst_ip 0) (List.nth_exn dst_ip 1)
-    ; w16 (List.nth_exn dst_ip 2) (List.nth_exn dst_ip 3)
-    ]
-  in
-  let sum = List.fold words ~init:0 ~f:( + ) in
-  let rec fold s = if s > 0xFFFF then fold ((s land 0xFFFF) + (s lsr 16)) else s in
-  lnot (fold sum) land 0xFFFF
+  Ip_udp.Ipv4.checksum ~src_ip ~dst_ip ~protocol:17 ~total_length
 ;;
 
 (* IPv4 header ++ UDP datagram, optionally MAC-padded to the 46-byte minimum. *)
@@ -100,24 +91,7 @@ let ipv4_udp_eth_payload ?(ethernet_padding = false) ~payload () =
   else datagram
 ;;
 
-(* ── reflected Ethernet CRC-32 / FCS ────────────────────────────────────────── *)
-let sw_crc_bit crc bit =
-  let feedback = crc land 1 lxor bit land 1 in
-  let shifted = crc lsr 1 in
-  if feedback = 1 then shifted lxor 0xEDB88320 else shifted
-;;
-
-let sw_crc_byte crc byte =
-  let crc = ref crc in
-  for i = 0 to 7 do
-    crc := sw_crc_bit !crc ((byte lsr i) land 1)
-  done;
-  !crc
-;;
-
-let sw_crc bytes = List.fold bytes ~init:0xFFFFFFFF ~f:sw_crc_byte
-let bytes_of_int ~n x = List.init n ~f:(fun i -> (x lsr (8 * i)) land 0xFF)
-let compute_fcs frame_bytes = bytes_of_int ~n:4 (sw_crc frame_bytes lxor 0xFFFF_FFFF)
+let compute_fcs = Crc32.fcs_bytes
 
 (* arbitrary RX MACs (Ipv4_rx ignores them); the MAC's own TX MACs are fixed in RTL *)
 let rx_dst_mac = [ 0x36; 0x12; 0x73; 0x36; 0x24; 0x85 ]
@@ -173,7 +147,7 @@ let rec bytes_of_nibbles = function
   | _ -> []
 ;;
 
-let () =
+let run_all () =
   let scope = Scope.create ~flatten_design:true ~auto_label_hierarchical_ports:true () in
   let sim = Sim.create (Udp_duplex_mac_top.create ~rx_fifo_for_sim:true scope) in
   let i = Cyclesim.inputs sim in
@@ -341,7 +315,8 @@ let () =
   check "test 3: no RX CRC error while transmitting" (not r3.rx_crc_error);
   printf "\n==== SUMMARY: %s ====\n" (if !all_ok then "ALL PASS" else "FAILURES");
   print_endline "\n=== SIMULATION COMPLETE ===";
-  if not !all_ok then exit 1
+  if not !all_ok then failwith "UDP duplex integration failures";
+  [ r1; r2; r3 ]
 ;;
 
-(**)
+(* End of the reusable duplex scenario runner. *)

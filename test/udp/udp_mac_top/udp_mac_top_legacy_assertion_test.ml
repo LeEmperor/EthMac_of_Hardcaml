@@ -1,3 +1,8 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_mac_top_legacy_assertion_test.ml" *)
+(* Superseded UDP MAC TX harness. Tags: [{ "DEPRECATED" ; "TEST" }] *)
+
 (*
  * End-to-end UDP transmit integration test.
  *

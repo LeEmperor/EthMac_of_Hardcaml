@@ -1,3 +1,8 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_loopback_mac_top_legacy_assertion_test.ml" *)
+(* Superseded UDP echo harness. Tags: [{ "DEPRECATED" ; "TEST" }] *)
+
 (*
  * Echo / loopback UDP-over-MAC integration testbench (Harness #2 top).
  *

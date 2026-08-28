@@ -1,3 +1,8 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_rx_mac_top_testbench.ml" *)
+(* Reusable integration scenarios for the MII/IPv4/UDP receive composition. *)
+
 (* Top-level UDP receive integration testbench.
 
    Drives real MII RX nibbles (preamble / SFD / dst_mac / src_mac / ethertype / IPv4
@@ -18,36 +23,21 @@ open! Core
 open! Hardcaml
 open! Udp_of_hardcaml
 open! Helper_tb_functions
+open! Hardcaml_verif
 
-let () = print_endline "=== Running UDP-over-MAC RX Integration Testbench ==="
+(* Inline tests are silent on success; the legacy executable retains its progress log. *)
+let printf format = Printf.ifprintf Out_channel.stdout format
+let print_endline _ = ()
 
 module Sim = Cyclesim.With_interface (Udp_rx_mac_top.I) (Udp_rx_mac_top.O)
 
 (* ── frame-byte builders (network order), shared shape with udp_ipv4_rx_tb ──── *)
 let hi8 x = (x lsr 8) land 0xFF
 let lo8 x = x land 0xFF
-let w16 hi lo = ((hi land 0xFF) lsl 8) lor (lo land 0xFF)
 let ip32 bytes = List.fold bytes ~init:0 ~f:(fun acc b -> (acc lsl 8) lor (b land 0xFF))
 
 let ip_checksum ~total_length ~protocol ~src_ip ~dst_ip =
-  let words =
-    [ 0x4500
-    ; total_length
-    ; 0x0000
-    ; 0x4000
-    ; w16 0x40 protocol
-    ; 0x0000
-    ; w16 (List.nth_exn src_ip 0) (List.nth_exn src_ip 1)
-    ; w16 (List.nth_exn src_ip 2) (List.nth_exn src_ip 3)
-    ; w16 (List.nth_exn dst_ip 0) (List.nth_exn dst_ip 1)
-    ; w16 (List.nth_exn dst_ip 2) (List.nth_exn dst_ip 3)
-    ]
-  in
-  let sum = List.fold words ~init:0 ~f:( + ) in
-  let rec fold sum =
-    if sum > 0xFFFF then fold ((sum land 0xFFFF) + (sum lsr 16)) else sum
-  in
-  lnot (fold sum) land 0xFFFF
+  Ip_udp.Ipv4.checksum ~src_ip ~dst_ip ~protocol ~total_length
 ;;
 
 let udp_datagram ~src_port ~dst_port ~checksum ~payload =
@@ -102,24 +92,7 @@ let ipv4_udp_eth_payload
   else datagram
 ;;
 
-(* ── SW CRC-32 / FCS (identical convention to test/mii/rx_path_tb.ml) ───────── *)
-let sw_crc_bit crc bit =
-  let feedback = crc land 1 lxor bit land 1 in
-  let shifted = crc lsr 1 in
-  if feedback = 1 then shifted lxor 0xEDB88320 else shifted
-;;
-
-let sw_crc_byte crc byte =
-  let crc = ref crc in
-  for i = 0 to 7 do
-    crc := sw_crc_bit !crc ((byte lsr i) land 1)
-  done;
-  !crc
-;;
-
-let sw_crc bytes = List.fold bytes ~init:0xFFFFFFFF ~f:sw_crc_byte
-let bytes_of_int ~n x = List.init n ~f:(fun i -> (x lsr (8 * i)) land 0xFF)
-let compute_fcs frame_bytes = bytes_of_int ~n:4 (sw_crc frame_bytes lxor 0xFFFF_FFFF)
+let compute_fcs = Crc32.fcs_bytes
 
 (* arbitrary MACs — Ipv4_rx ignores them, they just precede the ethertype *)
 let dst_mac = [ 0x36; 0x12; 0x73; 0x36; 0x24; 0x85 ]
@@ -133,6 +106,7 @@ type metadata =
   ; src_ip : int
   ; dst_ip : int
   }
+[@@deriving sexp, equal, compare]
 
 type run_result =
   { payload : int list
@@ -140,6 +114,7 @@ type run_result =
   ; crc_error : bool
   ; checksum_ok : bool
   }
+[@@deriving sexp, equal, compare]
 
 let bit s = Bits.to_bool !s
 
@@ -241,7 +216,7 @@ let expect_datagram ~label ~result ~payload =
     check "destination ip" (m.dst_ip = ip32 dst_ip)
 ;;
 
-let () =
+let run_all () =
   (* test 1: nominal datagram, no MAC padding (18B app => 46B eth payload) *)
   let payload1 = List.init 18 ~f:(fun k -> k + 1) in
   let r1 =
@@ -343,5 +318,5 @@ let () =
   check "app-layer crc_error asserted despite padding delay" r5.crc_error;
   printf "\n==== SUMMARY: %s ====\n" (if !all_ok then "ALL PASS" else "FAILURES");
   print_endline "\n=== SIMULATION COMPLETE ===";
-  if not !all_ok then exit 1
+  if not !all_ok then failwith "UDP-over-MAC RX integration failures"
 ;;

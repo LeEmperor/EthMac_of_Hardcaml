@@ -1,3 +1,8 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "udp_ipv4_rx_legacy_assertion_test.ml" *)
+(* Superseded composed IPv4/UDP RX harness. Tags: [{ "DEPRECATED" ; "TEST" }] *)
+
 (* IPv4 + UDP receive integration test.
 
    The input is the Ethernet-payload stream exposed by Mac_top:
