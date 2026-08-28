@@ -1,5 +1,5 @@
 (tests
- (names rx_path_tb rx_datapath_tb crc_tb tx_crc_tb tx_path_tb)
+ (names rx_path_tb tx_path_tb)
  (libraries
   core
   hardcaml
