@@ -33,8 +33,11 @@ let sorted_ports get_ports circuit =
 ;;
 
 let expected_children =
-  [ "ipv4_rx"
+  [ "hardcaml_async_fifo"
+  ; "ipv4_rx"
   ; "ipv4_tx"
+  ; "mac_rx_path"
+  ; "mac_tx_path"
   ; "rx_byte_assembler"
   ; "rx_controller"
   ; "rx_crc"
