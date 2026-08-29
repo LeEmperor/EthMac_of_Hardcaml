@@ -7,7 +7,8 @@
  (modules
   mac_top_testbench
   mac_top_unit_quickcheck_tests
-  mac_top_expect_tests)
+  mac_top_expect_tests
+  mac_top_hierarchy_tests)
  ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
  (inline_tests
   (flags
