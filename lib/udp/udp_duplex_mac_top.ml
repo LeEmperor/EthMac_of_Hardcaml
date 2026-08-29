@@ -45,8 +45,7 @@ module Ip_cfg = struct
   let dst_ip = [ 192; 168; 1; 1 ]
 end
 
-module Udp_txp = Udp_tx.Make (Udp_cfg)
-module Ip_txp = Ipv4_tx.Make (Ip_cfg)
+module Tx_path = Udp_ipv4_tx.Make (Udp_cfg) (Ip_cfg)
 
 (* ── RX policy (mirror Udp_rx_mac_top): forward everything, report status ───── *)
 module Ip_rx_cfg = struct
@@ -60,8 +59,7 @@ module Udp_rx_cfg = struct
   let debug = false
 end
 
-module Ip_rxp = Ipv4_rx.Make (Ip_rx_cfg)
-module Udp_rxp = Udp_rx.Make (Udp_rx_cfg)
+module Rx_path = Udp_ipv4_rx.Make (Ip_rx_cfg) (Udp_rx_cfg)
 
 module I = struct
   type 'a t =
@@ -127,44 +125,20 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* TX stack (mirrors Udp_mac_top) *)
   let wire_mac_tready = Signal.wire 1 in
   (* MAC.s_axis_tready -> Ipv4_tx.mac_tready *)
-  let wire_tx_l4_ready = Signal.wire 1 in
-  (* Ipv4_tx.l4_tready -> Udp_tx.l4_tready *)
   (* RX stack (mirrors Udp_rx_mac_top) *)
   let wire_mac_rready = Signal.wire 1 in
-  (* Ipv4_rx.m_axis_tready -> MAC.m_axis_tready *)
-  let wire_rx_l4_ready = Signal.wire 1 in
-  (* Udp_rx.m_axis_tready -> Ipv4_rx.l4_tready *)
-
-  (* ── TX L4: UDP header + app payload ─────────────────────────────────────── *)
-  let udp_tx =
-    Udp_txp.hierarchical
-      ~instance:"udp_tx"
+  let tx_path =
+    Tx_path.hierarchical
+      ~instance:"udp_ipv4_tx"
       scope
-      { Udp_txp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; start = i.tx_start
-      ; payload_len = i.payload_len
-      ; payload_tdata = i.payload_tdata
-      ; payload_tvalid = i.payload_tvalid
-      ; l4_tready = wire_tx_l4_ready
-      }
-  in
-  (* ── TX L3: prepend the IPv4 header ──────────────────────────────────────── *)
-  let ip_tx =
-    Ip_txp.hierarchical
-      ~instance:"ipv4_tx"
-      scope
-      { Ip_txp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; start = udp_tx.ip_start
-      ; l4_length = udp_tx.l4_length
-      ; protocol = udp_tx.protocol
-      ; l4_tdata = udp_tx.m_tdata
-      ; l4_tvalid = udp_tx.m_tvalid
-      ; l4_tlast = udp_tx.m_tlast
-      ; mac_tready = wire_mac_tready
+      { Tx_path.I.clock_i = i.tx_clock
+      ; reset_i = i.tx_reset
+      ; en_i = i.en
+      ; start_i = i.tx_start
+      ; payload_len_i = i.payload_len
+      ; payload_tdata_i = i.payload_tdata
+      ; payload_tvalid_i = i.payload_tvalid
+      ; mac_tready_i = wire_mac_tready
       }
   in
   (* ── L2: ONE shared MAC, both directions wired ───────────────────────────── *)
@@ -182,85 +156,54 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
       ; rx_er = i.rx_er
       ; rx_data = i.rx_data (* RX: feed the recovered-payload chain (via the wire stub) *)
       ; m_axis_tready = wire_mac_rready (* TX: driven by the IPv4/UDP TX stack *)
-      ; s_axis_tdata = ip_tx.m_tdata
-      ; s_axis_tvalid = ip_tx.m_tvalid
-      ; s_axis_tlast = ip_tx.m_tlast
+      ; s_axis_tdata = tx_path.m_tdata_o
+      ; s_axis_tvalid = tx_path.m_tvalid_o
+      ; s_axis_tlast = tx_path.m_tlast_o
       ; s_axis_tuser = Signal.gnd
-      ; tx_start = ip_tx.tx_start
+      ; tx_start = tx_path.tx_start_o
       }
   in
-  (* ── RX L3: strip the IPv4 header off the Ethernet payload ────────────────── *)
-  let ip_rx =
-    Ip_rxp.hierarchical
-      ~instance:"ipv4_rx"
+  let rx_path =
+    Rx_path.hierarchical
+      ~instance:"udp_ipv4_rx"
       scope
-      { Ip_rxp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; rx_tdata = mac.m_axis_tdata
-      ; rx_tvalid = mac.m_axis_tvalid
-      ; rx_tlast = mac.m_axis_tlast
-      ; rx_tuser = mac.m_axis_tuser
-      ; rx_tfirst = mac.m_axis_tfirst
-      ; rx_eth_type = mac.rx_eth_type
-      ; l4_tready = wire_rx_l4_ready
-      }
-  in
-  (* ── RX L4: strip the UDP header, emit application payload ────────────────── *)
-  let udp_rx =
-    Udp_rxp.hierarchical
-      ~instance:"udp_rx"
-      scope
-      { Udp_rxp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; rx_tdata = ip_rx.m_tdata
-      ; rx_tvalid = ip_rx.m_tvalid
-      ; rx_tlast = ip_rx.m_tlast
-      ; rx_tuser = ip_rx.crc_error
-      ; rx_tfirst = ip_rx.m_tfirst
-      ; ip_protocol = ip_rx.protocol
-      ; ip_src_ip = ip_rx.src_ip
-      ; ip_dst_ip = ip_rx.dst_ip
-      ; ip_frame_done = ip_rx.frame_done
-      ; ip_frame_error = ip_rx.frame_error
-      ; app_tready = i.app_tready
+      { Rx_path.I.clock_i = i.tx_clock
+      ; reset_i = i.tx_reset
+      ; en_i = i.en
+      ; rx_tdata_i = mac.m_axis_tdata
+      ; rx_tvalid_i = mac.m_axis_tvalid
+      ; rx_tlast_i = mac.m_axis_tlast
+      ; rx_tuser_i = mac.m_axis_tuser
+      ; rx_tfirst_i = mac.m_axis_tfirst
+      ; rx_eth_type_i = mac.rx_eth_type
+      ; app_tready_i = i.app_tready
       }
   in
   (* close every backpressure loop now that all blocks exist *)
-  Signal.(wire_tx_l4_ready <-- ip_tx.l4_tready);
   Signal.(wire_mac_tready <-- mac.s_axis_tready);
-  Signal.(wire_rx_l4_ready <-- udp_rx.m_axis_tready);
-  Signal.(wire_mac_rready <-- ip_rx.m_axis_tready);
-  (* Hold the frame-level bad-frame verdict at [frame_done] (see Udp_rx_mac_top) *)
-  let spec_tx = Reg_spec.create ~clock:i.tx_clock ~clear:i.tx_reset () in
-  let crc_error_held =
-    Signal.reg_fb spec_tx ~width:1 ~enable:udp_rx.frame_done ~f:(fun _ ->
-      udp_rx.frame_error)
-    -- "crc_error_held"
-  in
+  Signal.(wire_mac_rready <-- rx_path.m_axis_tready_o);
   { O.tx_d (* TX side *) = mac.tx_d
   ; tx_en = mac.tx_en
   ; tx_busy = mac.tx_busy
-  ; payload_tready = udp_tx.payload_tready
-  ; tx_udp_busy = udp_tx.busy (* RX side *)
-  ; app_tdata = udp_rx.m_tdata
-  ; app_tvalid = udp_rx.m_tvalid
-  ; app_tlast = udp_rx.m_tlast
-  ; app_tfirst = udp_rx.m_tfirst
-  ; app_start = udp_rx.app_start
-  ; src_port = udp_rx.src_port
-  ; dst_port = udp_rx.dst_port
-  ; udp_length = udp_rx.udp_length
-  ; payload_length = udp_rx.payload_length
-  ; udp_checksum = udp_rx.udp_checksum
-  ; src_ip = udp_rx.src_ip
-  ; dst_ip = udp_rx.dst_ip
-  ; checksum_ok = ip_rx.checksum_ok
-  ; crc_error = crc_error_held
-  ; rx_frame_done = udp_rx.frame_done
-  ; ip_busy = ip_rx.busy
-  ; rx_udp_busy = udp_rx.busy (* MAC RX status passthrough *)
+  ; payload_tready = tx_path.payload_tready_o
+  ; tx_udp_busy = tx_path.udp_busy_o (* RX side *)
+  ; app_tdata = rx_path.app_tdata_o
+  ; app_tvalid = rx_path.app_tvalid_o
+  ; app_tlast = rx_path.app_tlast_o
+  ; app_tfirst = rx_path.app_tfirst_o
+  ; app_start = rx_path.app_start_o
+  ; src_port = rx_path.src_port_o
+  ; dst_port = rx_path.dst_port_o
+  ; udp_length = rx_path.udp_length_o
+  ; payload_length = rx_path.payload_length_o
+  ; udp_checksum = rx_path.udp_checksum_o
+  ; src_ip = rx_path.src_ip_o
+  ; dst_ip = rx_path.dst_ip_o
+  ; checksum_ok = rx_path.checksum_ok_o
+  ; crc_error = rx_path.crc_error_o
+  ; rx_frame_done = rx_path.frame_done_o
+  ; ip_busy = rx_path.ip_busy_o
+  ; rx_udp_busy = rx_path.udp_busy_o (* MAC RX status passthrough *)
   ; frame_crc_ok = mac.frame_crc_ok
   ; in_payload = mac.in_payload
   ; frame_done = mac.frame_done

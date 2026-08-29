@@ -44,8 +44,7 @@ module Ip_cfg = struct
   let dst_ip = [ 192; 168; 1; 1 ]
 end
 
-module Udp = Udp_tx.Make (Udp_cfg)
-module Ip = Ipv4_tx.Make (Ip_cfg)
+module Tx_path = Udp_ipv4_tx.Make (Udp_cfg) (Ip_cfg)
 
 module I = struct
   type 'a t =
@@ -96,42 +95,20 @@ module O = struct
 end
 
 let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
-  (* break the two backpressure combinational loops with wire stubs *)
+  (* Break the MAC-to-protocol backpressure loop with a wire stub. *)
   let wire_mac_tready = Signal.wire 1 in
-  (* MAC.s_axis_tready -> Ipv4_tx.mac_tready *)
-  let wire_l4_tready = Signal.wire 1 in
-  (* Ipv4_tx.l4_tready -> Udp_tx.l4_tready *)
-
-  (* L4: UDP header + app payload *)
-  let udp =
-    Udp.hierarchical
-      ~instance:"udp_tx"
+  let tx_path =
+    Tx_path.hierarchical
+      ~instance:"udp_ipv4_tx"
       scope
-      { Udp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; start = i.tx_start
-      ; payload_len = i.payload_len
-      ; payload_tdata = i.payload_tdata
-      ; payload_tvalid = i.payload_tvalid
-      ; l4_tready = wire_l4_tready
-      }
-  in
-  (* L3: prepend the IPv4 header to the UDP datagram *)
-  let ip =
-    Ip.hierarchical
-      ~instance:"ipv4_tx"
-      scope
-      { Ip.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; start = udp.ip_start
-      ; l4_length = udp.l4_length
-      ; protocol = udp.protocol
-      ; l4_tdata = udp.m_tdata
-      ; l4_tvalid = udp.m_tvalid
-      ; l4_tlast = udp.m_tlast
-      ; mac_tready = wire_mac_tready
+      { Tx_path.I.clock_i = i.tx_clock
+      ; reset_i = i.tx_reset
+      ; en_i = i.en
+      ; start_i = i.tx_start
+      ; payload_len_i = i.payload_len
+      ; payload_tdata_i = i.payload_tdata
+      ; payload_tvalid_i = i.payload_tvalid
+      ; mac_tready_i = wire_mac_tready
       }
   in
   (* L2: Ethernet framing + FCS. ethertype 0x0800 = IPv4. *)
@@ -156,14 +133,13 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
              see the frames_buffered gate in mac_top.ml). The full frame — Ethernet
              framing, IPv4 header, UDP header, streamed app payload, MAC zero-padding, and
              FCS — is emitted byte-perfect (verified end-to-end in udp_mac_top_tb.ml). *)
-      ; s_axis_tdata = ip.m_tdata
-      ; s_axis_tvalid = ip.m_tvalid
-      ; s_axis_tlast = ip.m_tlast
+      ; s_axis_tdata = tx_path.m_tdata_o
+      ; s_axis_tvalid = tx_path.m_tvalid_o
+      ; s_axis_tlast = tx_path.m_tlast_o
       ; s_axis_tuser = Signal.gnd
-      ; tx_start = ip.tx_start
+      ; tx_start = tx_path.tx_start_o
       }
   in
-  Signal.(wire_l4_tready <-- ip.l4_tready);
   Signal.(wire_mac_tready <-- mac.s_axis_tready);
   { O.m_axis_tdata = mac.m_axis_tdata
   ; m_axis_tkeep = mac.m_axis_tkeep
@@ -173,8 +149,8 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   ; tx_d = mac.tx_d
   ; tx_en = mac.tx_en
   ; tx_busy = mac.tx_busy
-  ; payload_tready = udp.payload_tready
-  ; udp_busy = udp.busy
+  ; payload_tready = tx_path.payload_tready_o
+  ; udp_busy = tx_path.udp_busy_o
   ; frame_crc_ok = mac.frame_crc_ok
   ; in_payload = mac.in_payload
   ; frame_done = mac.frame_done
