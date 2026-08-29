@@ -266,7 +266,9 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
   let wire_dis_ready = Signal.wire 1 in
   let wire_fcs_byte = Signal.wire 8 in
   let tx_fifo =
-    Tx_fifo.create
+    Tx_fifo.hierarchical
+      ~instance:"tx_payload_fifo"
+      ~name:"tx_payload_fifo"
       ~cut_through:true
       ~capacity:128
       scope
@@ -310,7 +312,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
      lands, a named Payload predicate (or a decoded one-hot) retires this last literal
      too. *)
   let tx_ctrl =
-    Tx_controller.create
+    Tx_controller.hierarchical
+      ~instance:"tx_controller"
       scope
       { Tx_controller.I.clock = tx_clock
       ; reset = tx_reset
@@ -329,7 +332,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
   Signal.(
     wire_tx_fifo_rd_en <-- (tx_ctrl.state ==:. 6 &: wire_dis_ready &: ~:(tx_ctrl.pad)));
   let tx_dp =
-    Tx_datapath.create
+    Tx_datapath.hierarchical
+      ~instance:"tx_datapath"
       ~ethertype
       scope
       { Tx_datapath.I.clock = tx_clock
@@ -345,7 +349,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
       }
   in
   let tx_ser =
-    Tx_byte_disassembler.create
+    Tx_byte_disassembler.hierarchical
+      ~instance:"tx_byte_disassembler"
       scope
       { Tx_byte_disassembler.I.clock = tx_clock
       ; reset = tx_reset
@@ -364,7 +369,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
      goes low for the whole Fcs state, which would reload the accumulator while its own
      result is being read out. Same reasoning for the serializer's byte_in_valid. *)
   let tx_crc_inst =
-    Tx_crc.create
+    Tx_crc.hierarchical
+      ~instance:"tx_crc"
       scope
       { Tx_crc.I.clock = tx_clock
       ; reset = tx_reset
@@ -377,7 +383,11 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
   Signal.(wire_fcs_byte <-- tx_crc_inst.fcs_byte);
   (* can i map this to a function that lets me auto-bind the keep functionality? *)
   let keep =
-    reduce ~f:( |: ) (bits_lsb datapath_inst.keep @ bits_lsb controller_inst.keep)
+    reduce
+      ~f:( |: )
+      (bits_lsb datapath_inst.keep
+       @ bits_lsb controller_inst.keep
+       @ bits_lsb inputs.I.s_axis_tuser)
   in
   (* ── RX start-of-frame qualifier (read/tx_clock side, aligned to m_axis) ── A sideband
      like tlast/tuser: asserted alongside the first byte of a frame and sampled by the

@@ -28,9 +28,20 @@ let sorted_ports get_ports circuit =
   |> List.sort ~compare:[%compare: string * int]
 ;;
 
-let%test_unit "the MAC RX leaves form a complete emitted hierarchy" =
+let%test_unit "the MAC RX and TX leaves form a complete emitted hierarchy" =
   let design = build ~flatten_design:false in
-  let expected = [ "rx_byte_assembler"; "rx_controller"; "rx_crc"; "rx_datapath" ] in
+  let expected =
+    [ "rx_byte_assembler"
+    ; "rx_controller"
+    ; "rx_crc"
+    ; "rx_datapath"
+    ; "tx_byte_disassembler"
+    ; "tx_controller"
+    ; "tx_crc"
+    ; "tx_datapath"
+    ; "tx_payload_fifo"
+    ]
+  in
   [%test_result: string list] (sorted_circuit_names design.database) ~expect:expected;
   let emitted =
     Rtl.create ~database:design.database Verilog [ design.top ]

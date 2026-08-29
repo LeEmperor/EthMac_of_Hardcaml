@@ -80,3 +80,8 @@ let create (scope : Scope.t) i : _ O.t =
   ; keep = lsb crc_reg.value
   }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_crc" create i
+;;

@@ -92,3 +92,8 @@ let create ?(ethertype = 0x9999) (scope : Scope.t) i : _ O.t =
   in
   { byte_out = byte_mux; s_axis_tready = zero 1; keep = lsb byte_mux }
 ;;
+
+let hierarchical ?instance ?(ethertype = 0x9999) scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_datapath" (create ~ethertype) i
+;;

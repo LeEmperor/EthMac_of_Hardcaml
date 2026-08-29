@@ -107,3 +107,8 @@ let create (scope : Scope.t) i : _ O.t =
   ; tx_en = i_wires.nibble_valid.value
   }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_byte_disassembler" create i
+;;

@@ -239,3 +239,8 @@ let create (scope : Scope.t) i : _ O.t =
   ; pad = padding_now
   }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_controller" create i
+;;
