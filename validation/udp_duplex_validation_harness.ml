@@ -136,7 +136,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let rx_drain = Board_scaffolding.rx_drain ~scope ~clock:i.I.eth_tx_clk ~reset:tx_rst in
   (* ── The full-duplex UDP-over-MAC stack (one Mac_top, both directions) ────── *)
   let udp_inst =
-    Udp_duplex_mac_top.create
+    Udp_duplex_mac_top.hierarchical
       ~rx_fifo_for_sim:false
       scope
       { Udp_duplex_mac_top.I.rx_clock = i.I.eth_rx_clk
@@ -188,7 +188,8 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let frame_done_tx = pulse_sync_tx udp_inst.frame_done -- "frame_done_tx" in
   (* ── Register block (STUB) — reused verbatim; taps the CDC'd MAC RX status ─── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.create
+    Mac_top_validation_harness_regs.hierarchical
+      ~instance:"validation_regs"
       scope
       { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst

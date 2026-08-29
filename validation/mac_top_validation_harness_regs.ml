@@ -84,3 +84,8 @@ let create (_scope : Scope.t) (_i : _ I.t) : _ O.t =
   ; keep = gnd
   }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"mac_top_validation_harness_regs" create i
+;;

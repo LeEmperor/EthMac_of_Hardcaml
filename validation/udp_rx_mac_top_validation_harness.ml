@@ -89,7 +89,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
      slow drain pulse, so the recovered payload steps out one byte/second.
      ~rx_fifo_for_sim:false selects the real async RX FIFO for the board. *)
   let udp_inst =
-    Udp_rx_mac_top.create
+    Udp_rx_mac_top.hierarchical
       ~rx_fifo_for_sim:false
       scope
       { Udp_rx_mac_top.I.rx_clock = i.I.eth_rx_clk
@@ -135,7 +135,8 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* ── Register block (STUB) — reused verbatim from the TX harness, AXI-Lite tied off. TX
      is idle here so tx_en = gnd. Consumes the CDC'd MAC RX status. ────── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.create
+    Mac_top_validation_harness_regs.hierarchical
+      ~instance:"validation_regs"
       scope
       { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
