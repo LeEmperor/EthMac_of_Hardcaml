@@ -74,6 +74,7 @@ let expected_children =
   ; "ipv4_rx"
   ; "ipv4_tx"
   ; "mac_rx_path"
+  ; "mac_top"
   ; "mac_tx_path"
   ; "rx_byte_assembler"
   ; "rx_controller"
@@ -112,13 +113,10 @@ let%test_unit "the duplex stack records and emits the IPv4 and UDP implementatio
   [%test_result: string list] unresolved ~expect:[];
   [%test_result: string list]
     (sorted_instantiations design.top)
-    ~expect:
-      [ "hardcaml_async_fifo"
-      ; "mac_rx_path"
-      ; "mac_tx_path"
-      ; "udp_ipv4_rx"
-      ; "udp_ipv4_tx"
-      ];
+    ~expect:[ "mac_top"; "udp_ipv4_rx"; "udp_ipv4_tx" ];
+  [%test_result: string list]
+    (sorted_instantiations (find_exn design.database "mac_top"))
+    ~expect:[ "hardcaml_async_fifo"; "mac_rx_path"; "mac_tx_path" ];
   [%test_result: string list]
     (sorted_instantiations (find_exn design.database "udp_ipv4_tx"))
     ~expect:[ "ipv4_tx"; "udp_tx" ];
@@ -135,7 +133,8 @@ let%test_unit "the duplex stack records and emits the IPv4 and UDP implementatio
   assert (String.is_substring rtl ~substring:"module ipv4_rx");
   assert (String.is_substring rtl ~substring:"module ipv4_tx");
   assert (String.is_substring rtl ~substring:"module udp_rx");
-  assert (String.is_substring rtl ~substring:"module udp_tx")
+  assert (String.is_substring rtl ~substring:"module udp_tx");
+  assert (String.is_substring rtl ~substring:"module mac_top")
 ;;
 
 let%test_unit "flat and hierarchical duplex stacks expose identical ports" =

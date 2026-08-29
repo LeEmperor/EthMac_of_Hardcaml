@@ -1,0 +1,24 @@
+; University of Florida
+; Author: Bohdan Purtell
+; Board-level hierarchy regression for the validation harnesses (Stage 5).
+
+(library
+ (name board_hierarchy_inline_tests)
+ (modules board_hierarchy_tests)
+ ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries
+  core
+  hardcaml
+  helper_circuits
+  mii_of_hardcaml
+  udp_of_hardcaml
+  mac_validation)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

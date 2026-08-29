@@ -113,7 +113,7 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* L2: Ethernet framing + FCS. ethertype 0x0800 = IPv4. *)
   let mac =
-    Mac_top.create
+    Mac_top.hierarchical
       ~rx_fifo_for_sim
       ~ethertype:0x0800
       scope
@@ -155,4 +155,9 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   ; in_payload = mac.in_payload
   ; frame_done = mac.frame_done
   }
+;;
+
+let hierarchical ?instance ?(rx_fifo_for_sim = false) scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"udp_mac_top" (create ~rx_fifo_for_sim) i
 ;;
