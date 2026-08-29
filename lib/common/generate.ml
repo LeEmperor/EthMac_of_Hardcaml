@@ -62,8 +62,11 @@ module Circ_udp_loopback_validation =
 (* Emit [circ] as hierarchical Verilog at [path]. [path] is resolved against the repo
    root: DUNE_SOURCEROOT is set by [dune exec] so the RTL always lands at a stable
    location rather than wherever the binary happened to run. *)
-let emit ~path circ =
-  let rtl = Rtl.full_hierarchy (Rtl.create Verilog [ circ ]) in
+let emit ~scope ~path circ =
+  let rtl =
+    Rtl.full_hierarchy
+      (Rtl.create ~database:(Scope.circuit_database scope) Verilog [ circ ])
+  in
   let root = Option.value (Sys.getenv "DUNE_SOURCEROOT") ~default:"." in
   let out = Filename.concat root path in
   Out_channel.write_all out ~data:(Rope.to_string rtl);
@@ -82,6 +85,7 @@ let target ~summary ~build =
 let mac_cmd =
   target ~summary:"standalone Ethernet MAC -> hardcaml_eth_mac.v" ~build:(fun scope ->
     emit
+      ~scope
       ~path:"hardcaml_eth_mac.v"
       (Circ_mac.create_exn ~name:"hardcaml_eth_mac" (Mac_top.create scope)))
 ;;
@@ -89,6 +93,7 @@ let mac_cmd =
 let udp_cmd =
   target ~summary:"UDP-over-MAC stack -> hardcaml_udp_with_mac.v" ~build:(fun scope ->
     emit
+      ~scope
       ~path:"hardcaml_udp_with_mac.v"
       (Circ_udp.create_exn ~name:"Udp_stack_w_mac" (Udp_mac_top.create scope)))
 ;;
@@ -99,6 +104,7 @@ let validation_cmd =
       "board MAC harness (bare MAC, both dirs) -> validation/mac_top_validation_harness.v"
     ~build:(fun scope ->
       emit
+        ~scope
         ~path:"validation/mac_top_validation_harness.v"
         (Circ_validation.create_exn
            ~name:"mac_top_validation_harness"
@@ -112,6 +118,7 @@ let udp_tx_validation_cmd =
        validation/udp_mac_top_validation_harness.v"
     ~build:(fun scope ->
       emit
+        ~scope
         ~path:"validation/udp_mac_top_validation_harness.v"
         (Circ_udp_validation.create_exn
            ~name:"udp_mac_top_validation_harness"
@@ -125,6 +132,7 @@ let udp_rx_validation_cmd =
        validation/udp_rx_mac_top_validation_harness.v"
     ~build:(fun scope ->
       emit
+        ~scope
         ~path:"validation/udp_rx_mac_top_validation_harness.v"
         (Circ_udp_rx_validation.create_exn
            ~name:"udp_rx_mac_top_validation_harness"
@@ -138,6 +146,7 @@ let udp_duplex_validation_cmd =
        validation/udp_duplex_validation_harness.v"
     ~build:(fun scope ->
       emit
+        ~scope
         ~path:"validation/udp_duplex_validation_harness.v"
         (Circ_udp_duplex_validation.create_exn
            ~name:"udp_duplex_validation_harness"
@@ -151,6 +160,7 @@ let udp_loopback_validation_cmd =
        validation/udp_loopback_validation_harness.v"
     ~build:(fun scope ->
       emit
+        ~scope
         ~path:"validation/udp_loopback_validation_harness.v"
         (Circ_udp_loopback_validation.create_exn
            ~name:"udp_loopback_validation_harness"
