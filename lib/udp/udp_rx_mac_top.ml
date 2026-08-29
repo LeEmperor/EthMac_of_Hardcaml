@@ -147,8 +147,9 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* L3: strip the IPv4 header off the Ethernet payload. *)
   let ip =
-    Ip_rx.create
-      (Scope.sub_scope scope "ipv4_rx")
+    Ip_rx.hierarchical
+      ~instance:"ipv4_rx"
+      scope
       { Ip_rx.I.clock = i.tx_clock
       ; reset = i.tx_reset
       ; en = i.en
@@ -163,8 +164,9 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* L4: strip the UDP header off the datagram, emit application payload. *)
   let udp =
-    Udp_rxp.create
-      (Scope.sub_scope scope "udp_rx")
+    Udp_rxp.hierarchical
+      ~instance:"udp_rx"
+      scope
       { Udp_rxp.I.clock = i.tx_clock
       ; reset = i.tx_reset
       ; en = i.en

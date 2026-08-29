@@ -161,7 +161,8 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   let wire_rx_app_tready = Signal.wire 1 in
   (* ── TX L4: UDP header + app payload, fed from the bridge stubs ───────────── *)
   let udp_tx =
-    Udp_txp.create
+    Udp_txp.hierarchical
+      ~instance:"udp_tx"
       scope
       { Udp_txp.I.clock = i.tx_clock
       ; reset = i.tx_reset
@@ -175,7 +176,8 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* ── TX L3: prepend the IPv4 header ──────────────────────────────────────── *)
   let ip_tx =
-    Ip_txp.create
+    Ip_txp.hierarchical
+      ~instance:"ipv4_tx"
       scope
       { Ip_txp.I.clock = i.tx_clock
       ; reset = i.tx_reset
@@ -213,8 +215,9 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* ── RX L3: strip the IPv4 header off the Ethernet payload ────────────────── *)
   let ip_rx =
-    Ip_rxp.create
-      (Scope.sub_scope scope "ipv4_rx")
+    Ip_rxp.hierarchical
+      ~instance:"ipv4_rx"
+      scope
       { Ip_rxp.I.clock = i.tx_clock
       ; reset = i.tx_reset
       ; en = i.en
@@ -229,8 +232,9 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* ── RX L4: strip the UDP header, emit application payload ────────────────── *)
   let udp_rx =
-    Udp_rxp.create
-      (Scope.sub_scope scope "udp_rx")
+    Udp_rxp.hierarchical
+      ~instance:"udp_rx"
+      scope
       { Udp_rxp.I.clock = i.tx_clock
       ; reset = i.tx_reset
       ; en = i.en

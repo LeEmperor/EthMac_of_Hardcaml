@@ -232,4 +232,9 @@ module Make (C : Config) = struct
     ; keep
     }
   ;;
+
+  let hierarchical ?instance scope i =
+    let module H = Hierarchy.In_scope (I) (O) in
+    H.hierarchical ?instance ~scope ~name:"ipv4_tx" create i
+  ;;
 end

@@ -104,7 +104,8 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
 
   (* L4: UDP header + app payload *)
   let udp =
-    Udp.create
+    Udp.hierarchical
+      ~instance:"udp_tx"
       scope
       { Udp.I.clock = i.tx_clock
       ; reset = i.tx_reset
@@ -118,7 +119,8 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
   (* L3: prepend the IPv4 header to the UDP datagram *)
   let ip =
-    Ip.create
+    Ip.hierarchical
+      ~instance:"ipv4_tx"
       scope
       { Ip.I.clock = i.tx_clock
       ; reset = i.tx_reset
