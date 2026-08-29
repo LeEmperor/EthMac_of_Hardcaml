@@ -1,6 +1,7 @@
 open! Core
 open! Async
 open! Mii_of_hardcaml
+open! Udp_of_hardcaml
 module Reports = Hardcaml_xilinx_reports
 module Tx_crc_command = Reports.Command.With_interface (Tx_crc.I) (Tx_crc.O)
 module Rx_crc_command = Reports.Command.With_interface (Rx_crc.I) (Rx_crc.O)
@@ -10,6 +11,27 @@ module Tx_controller_command =
 
 module Rx_controller_command =
   Reports.Command.With_interface (Rx_controller.I) (Rx_controller.O)
+
+module Mac_rx_path_command =
+  Reports.Command.With_interface (Mac_rx_path.I) (Mac_rx_path.O)
+
+module Mac_tx_path_command =
+  Reports.Command.With_interface (Mac_tx_path.I) (Mac_tx_path.O)
+
+module Udp_ipv4_tx_command =
+  Reports.Command.With_interface
+    (Udp_duplex_mac_top.Tx_path.I)
+    (Udp_duplex_mac_top.Tx_path.O)
+
+module Udp_ipv4_rx_command =
+  Reports.Command.With_interface
+    (Udp_duplex_mac_top.Rx_path.I)
+    (Udp_duplex_mac_top.Rx_path.O)
+
+module Mac_top_command = Reports.Command.With_interface (Mac_top.I) (Mac_top.O)
+
+module Udp_duplex_mac_top_command =
+  Reports.Command.With_interface (Udp_duplex_mac_top.I) (Udp_duplex_mac_top.O)
 
 (* [Primitive_group] queries Vivado's UltraScale-oriented PRIMITIVE_GROUP properties. They
    return misleading zero counts for the Artix-7 target, so omit that compact table for
@@ -208,5 +230,47 @@ let () =
                ~name:"rx_controller"
                ~flags
                Rx_controller.create) )
+       ; ( "mac-rx-path"
+         , report_command ~name:"mac_rx_path" (fun flags ->
+             Mac_rx_path_command.run
+               ~primitive_groups
+               ~name:"mac_rx_path"
+               ~flags
+               Mac_rx_path.create) )
+       ; ( "mac-tx-path"
+         , report_command ~name:"mac_tx_path" (fun flags ->
+             Mac_tx_path_command.run
+               ~primitive_groups
+               ~name:"mac_tx_path"
+               ~flags
+               (Mac_tx_path.create ~ethertype:0x0800)) )
+       ; ( "udp-ipv4-tx"
+         , report_command ~name:"udp_ipv4_tx" (fun flags ->
+             Udp_ipv4_tx_command.run
+               ~primitive_groups
+               ~name:"udp_ipv4_tx"
+               ~flags
+               Udp_duplex_mac_top.Tx_path.create) )
+       ; ( "udp-ipv4-rx"
+         , report_command ~name:"udp_ipv4_rx" (fun flags ->
+             Udp_ipv4_rx_command.run
+               ~primitive_groups
+               ~name:"udp_ipv4_rx"
+               ~flags
+               Udp_duplex_mac_top.Rx_path.create) )
+       ; ( "mac-top"
+         , report_command ~name:"mac_top" (fun flags ->
+             Mac_top_command.run
+               ~primitive_groups
+               ~name:"mac_top"
+               ~flags
+               (Mac_top.create ~rx_fifo_for_sim:false ~ethertype:0x0800)) )
+       ; ( "udp-duplex-mac-top"
+         , report_command ~name:"udp_duplex_mac_top" (fun flags ->
+             Udp_duplex_mac_top_command.run
+               ~primitive_groups
+               ~name:"udp_duplex_mac_top"
+               ~flags
+               (Udp_duplex_mac_top.create ~rx_fifo_for_sim:false)) )
        ])
 ;;

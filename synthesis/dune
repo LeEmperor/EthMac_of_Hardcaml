@@ -6,7 +6,8 @@
   core_unix
   core_unix.command_unix
   hardcaml_xilinx_reports
-  mii_of_hardcaml)
+  mii_of_hardcaml
+  udp_of_hardcaml)
  (flags
   (:standard -w -27-57-33-34-35-40-63-47-26))
  (preprocess
