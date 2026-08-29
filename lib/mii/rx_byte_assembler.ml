@@ -56,3 +56,8 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
     ];
   { O.byte_out = r.nibble_hi.value @: r.nibble_lo.value; byte_valid = r.byte_valid.value }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"rx_byte_assembler" create i
+;;

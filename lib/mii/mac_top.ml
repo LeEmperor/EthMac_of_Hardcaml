@@ -149,7 +149,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
      in scope — see the [reduce] below. Forward wires are only needed to break
      combinational cycles, which this isn't. *)
   let datapath_inst : Signal.t Rx_datapath.O.t =
-    Rx_datapath.create
+    Rx_datapath.hierarchical
+      ~instance:"rx_datapath"
       scope
       { Rx_datapath.I.rx_data = d_in
       ; Rx_datapath.I.byte_assembler_en = wire_byte_assembler_en
@@ -168,7 +169,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
       }
   in
   let controller_inst =
-    Rx_controller.create
+    Rx_controller.hierarchical
+      ~instance:"rx_controller"
       scope
       { Rx_controller.I.clock = rx_clock
       ; Rx_controller.I.reset = rx_reset
@@ -195,7 +197,8 @@ let create ?(rx_fifo_for_sim = false) ?(ethertype = 0x9999) (scope : Scope.t) in
      cycle when we sample crc_valid for tuser. *)
   let crc_en = ~:(controller_inst.in_preamble) &: (inputs.I.rx_dv |: frame_end) &: en in
   let crc_inst =
-    Rx_crc.create
+    Rx_crc.hierarchical
+      ~instance:"rx_crc"
       scope
       { Rx_crc.I.clock = rx_clock
       ; reset = rx_reset

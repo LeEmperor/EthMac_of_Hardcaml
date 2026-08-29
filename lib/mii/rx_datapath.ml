@@ -57,11 +57,11 @@ end
 
 let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let open Always in
-  let _scope : Scope.t = Scope.sub_scope scope "rx_datapath_scope" in
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.reset () in
   let byte_assembler_inst =
-    Rx_byte_assembler.create
-      _scope
+    Rx_byte_assembler.hierarchical
+      ~instance:"rx_byte_assembler"
+      scope
       { Rx_byte_assembler.I.rx_data = i.rx_data
       ; en = i.byte_assembler_en
       ; clock = i.clock
@@ -112,4 +112,9 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   ; eth_type = r.eth_type.value
   ; keep
   }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"rx_datapath" create i
 ;;

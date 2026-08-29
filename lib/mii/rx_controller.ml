@@ -214,3 +214,8 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   ; keep
   }
 ;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"rx_controller" create i
+;;
