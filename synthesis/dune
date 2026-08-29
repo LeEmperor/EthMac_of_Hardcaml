@@ -1,0 +1,15 @@
+(executable
+ (name xilinx_reports)
+ (libraries
+  async
+  core
+  core_unix
+  core_unix.command_unix
+  hardcaml_xilinx_reports
+  mii_of_hardcaml)
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26))
+ (preprocess
+  (pps ppx_jane))
+ (lint
+  (pps ppx_js_style)))
