@@ -1,3 +1,9 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_crc.ml" *)
+(* CRC-32 checker for received Ethernet frame bytes. Accumulates valid input bytes and
+   indicates when the raw accumulator reaches the standard Ethernet residue. *)
+
 open! Core
 open! Hardcaml
 open! Signal

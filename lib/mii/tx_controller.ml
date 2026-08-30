@@ -1,8 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_controller This module serves as an FSM controller for the transmit path of
-   my Hardcaml ethernet MAC.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_controller.ml" *)
+(* FSM controller for the transmit path of the Hardcaml Ethernet MAC. *)
 
 open! Core
 open! Hardcaml

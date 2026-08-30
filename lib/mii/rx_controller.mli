@@ -1,8 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Interface: Rx_controller This module serves interface to an FSM controller for a
-   Hardcaml ethernet MAC.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_controller.mli" *)
+(* Public interface to the receive-path FSM controller for the Hardcaml Ethernet MAC. *)
 
 open! Core
 open! Hardcaml

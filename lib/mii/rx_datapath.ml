@@ -1,9 +1,9 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Rx_datapath Byte-level RX datapath: reassembles nibbles into bytes, latches the
-   Ethernet header fields (dst/src MAC + ethertype), and runs the 4-deep FCS-strip
-   pipeline so the emitted payload excludes the trailing 4 CRC bytes.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_datapath.ml" *)
+(* Byte-level RX datapath: reassembles nibbles into bytes, latches the Ethernet header
+   fields (destination and source MAC plus ethertype), and runs the four-deep FCS-strip
+   pipeline so the emitted payload excludes the trailing four CRC bytes. *)
 
 open! Core
 open! Hardcaml

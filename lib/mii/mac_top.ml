@@ -1,7 +1,8 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Mac_top Toplevel of the MII MAC.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "mac_top.ml" *)
+(* Top-level MII MAC, including the transmit and receive paths and their clock-domain
+   crossing. *)
 
 open! Core
 open! Hardcaml

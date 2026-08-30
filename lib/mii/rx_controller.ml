@@ -1,8 +1,9 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Rx_controller FSM controller for the receive path of the Hardcaml Ethernet MAC.
-   Walks the frame header (preamble/SFD → dst → src → ethertype → payload) and drives the
-   datapath's register-enable / payload-select control lines.
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_controller.ml" *)
+(* FSM controller for the receive path of the Hardcaml Ethernet MAC. Walks the frame
+   header (preamble/SFD → dst → src → ethertype → payload) and drives the datapath's
+   register-enable and payload-select control lines.
 
    NB: SFD (0xD5) is detected inside the PREAMBLE state rather than a dedicated state, and
    there is no FCS state — the trailing CRC is stripped in the datapath pipeline, not the

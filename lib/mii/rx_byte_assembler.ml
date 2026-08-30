@@ -1,9 +1,9 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Rx_byte_assembler Pairs the PHY's 4-bit MII nibbles into bytes, lo nibble
-   first. The first nibble of a pair lands in the low half of [byte_out], the second in
-   the high half; [byte_valid] pulses for one cycle as the second nibble completes a byte.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler.ml" *)
+(* Pairs the PHY's 4-bit MII nibbles into bytes, low nibble first. The first nibble of a
+   pair lands in the low half of [byte_out], the second in the high half; [byte_valid]
+   pulses for one cycle as the second nibble completes a byte. *)
 
 open! Core
 open! Hardcaml

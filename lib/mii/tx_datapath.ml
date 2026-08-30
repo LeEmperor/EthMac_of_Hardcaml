@@ -1,7 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_datapath This module serves as the datapath for my Hardcaml Ethernet MAC
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_datapath.ml" *)
+(* Byte-level datapath for the Hardcaml Ethernet MAC transmit path. *)
 
 open! Core
 open! Hardcaml

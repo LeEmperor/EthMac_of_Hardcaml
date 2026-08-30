@@ -1,8 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_byte_disassembler This module serves as the nibble-serializer for my
-   Hardcaml Ethernet MAC
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler.ml" *)
+(* Nibble serializer for the Hardcaml Ethernet MAC transmit path. *)
 
 open! Core
 open! Hardcaml
