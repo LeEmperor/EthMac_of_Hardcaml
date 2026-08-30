@@ -1,5 +1,5 @@
 (*
- * Module: Mac_top_validation_harness_regs
+ * Module: Mac_validation_harness_regs
  * AXI4-Lite register block for MAC validation.  ***STUB for now.***
  *
  * In a normal validation flow these registers are exposed to a processor
@@ -83,4 +83,9 @@ let create (_scope : Scope.t) (_i : _ I.t) : _ O.t =
   ; enable = vdd
   ; keep = gnd
   }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"mac_validation_harness_regs" create i
 ;;

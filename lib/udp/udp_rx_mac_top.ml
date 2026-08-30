@@ -56,8 +56,7 @@ module Udp_rx_cfg = struct
   let debug = false
 end
 
-module Ip_rx = Ipv4_rx.Make (Ip_rx_cfg)
-module Udp_rxp = Udp_rx.Make (Udp_rx_cfg)
+module Rx_path = Udp_ipv4_rx.Make (Ip_rx_cfg) (Udp_rx_cfg)
 
 module I = struct
   type 'a t =
@@ -115,16 +114,12 @@ module O = struct
 end
 
 let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
-  (* break the two backpressure combinational loops with wire stubs *)
+  (* Break the protocol-to-MAC backpressure loop with a wire stub. *)
   let wire_mac_ready = Signal.wire 1 in
-  (* Ipv4_rx.m_axis_tready -> MAC.m_axis_tready *)
-  let wire_l4_ready = Signal.wire 1 in
-  (* Udp_rx.m_axis_tready -> Ipv4_rx.l4_tready *)
-
   (* L2: Ethernet framing + FCS check. ethertype only matters for TX framing (tied off
      here); RX filtering keys off the latched rx_eth_type instead. *)
   let mac =
-    Mac_top.create
+    Mac_top.hierarchical
       ~rx_fifo_for_sim
       ~ethertype:0x0800
       scope
@@ -145,73 +140,47 @@ let create ?(rx_fifo_for_sim = false) (scope : Scope.t) (i : _ I.t) : _ O.t =
       ; tx_start = Signal.gnd
       }
   in
-  (* L3: strip the IPv4 header off the Ethernet payload. *)
-  let ip =
-    Ip_rx.create
-      (Scope.sub_scope scope "ipv4_rx")
-      { Ip_rx.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; rx_tdata = mac.m_axis_tdata
-      ; rx_tvalid = mac.m_axis_tvalid
-      ; rx_tlast = mac.m_axis_tlast
-      ; rx_tuser = mac.m_axis_tuser
-      ; rx_tfirst = mac.m_axis_tfirst
-      ; rx_eth_type = mac.rx_eth_type
-      ; l4_tready = wire_l4_ready
+  let rx_path =
+    Rx_path.hierarchical
+      ~instance:"udp_ipv4_rx"
+      scope
+      { Rx_path.I.clock_i = i.tx_clock
+      ; reset_i = i.tx_reset
+      ; en_i = i.en
+      ; rx_tdata_i = mac.m_axis_tdata
+      ; rx_tvalid_i = mac.m_axis_tvalid
+      ; rx_tlast_i = mac.m_axis_tlast
+      ; rx_tuser_i = mac.m_axis_tuser
+      ; rx_tfirst_i = mac.m_axis_tfirst
+      ; rx_eth_type_i = mac.rx_eth_type
+      ; app_tready_i = i.app_tready
       }
   in
-  (* L4: strip the UDP header off the datagram, emit application payload. *)
-  let udp =
-    Udp_rxp.create
-      (Scope.sub_scope scope "udp_rx")
-      { Udp_rxp.I.clock = i.tx_clock
-      ; reset = i.tx_reset
-      ; en = i.en
-      ; rx_tdata = ip.m_tdata
-      ; rx_tvalid = ip.m_tvalid
-      ; rx_tlast = ip.m_tlast
-      ; rx_tuser = ip.crc_error
-      ; rx_tfirst = ip.m_tfirst
-      ; ip_protocol = ip.protocol
-      ; ip_src_ip = ip.src_ip
-      ; ip_dst_ip = ip.dst_ip
-      ; ip_frame_done = ip.frame_done
-      ; ip_frame_error = ip.frame_error
-      ; app_tready = i.app_tready
-      }
-  in
-  (* close the backpressure loops now that all three blocks exist *)
-  Signal.(wire_l4_ready <-- udp.m_axis_tready);
-  Signal.(wire_mac_ready <-- ip.m_axis_tready);
-  (* Latch the frame-level bad-frame verdict at [frame_done] and hold it (like the MAC's
-     own frame_crc_ok) so the application can sample it any time after the datagram drains
-     — the fix for FCS status being dropped at the L3->L4 tlast. tx_clock domain:
-     udp.frame_done rides mac.m_axis, presented in tx_clock. *)
-  let spec_tx = Reg_spec.create ~clock:i.tx_clock ~clear:i.tx_reset () in
-  let crc_error_held =
-    Signal.reg_fb spec_tx ~width:1 ~enable:udp.frame_done ~f:(fun _ -> udp.frame_error)
-    -- "crc_error_held"
-  in
-  { O.app_tdata = udp.m_tdata
-  ; app_tvalid = udp.m_tvalid
-  ; app_tlast = udp.m_tlast
-  ; app_tfirst = udp.m_tfirst
-  ; app_start = udp.app_start
-  ; src_port = udp.src_port
-  ; dst_port = udp.dst_port
-  ; udp_length = udp.udp_length
-  ; payload_length = udp.payload_length
-  ; udp_checksum = udp.udp_checksum
-  ; src_ip = udp.src_ip
-  ; dst_ip = udp.dst_ip
-  ; checksum_ok = ip.checksum_ok
-  ; crc_error = crc_error_held
-  ; rx_frame_done = udp.frame_done
-  ; ip_busy = ip.busy
-  ; udp_busy = udp.busy
+  Signal.(wire_mac_ready <-- rx_path.m_axis_tready_o);
+  { O.app_tdata = rx_path.app_tdata_o
+  ; app_tvalid = rx_path.app_tvalid_o
+  ; app_tlast = rx_path.app_tlast_o
+  ; app_tfirst = rx_path.app_tfirst_o
+  ; app_start = rx_path.app_start_o
+  ; src_port = rx_path.src_port_o
+  ; dst_port = rx_path.dst_port_o
+  ; udp_length = rx_path.udp_length_o
+  ; payload_length = rx_path.payload_length_o
+  ; udp_checksum = rx_path.udp_checksum_o
+  ; src_ip = rx_path.src_ip_o
+  ; dst_ip = rx_path.dst_ip_o
+  ; checksum_ok = rx_path.checksum_ok_o
+  ; crc_error = rx_path.crc_error_o
+  ; rx_frame_done = rx_path.frame_done_o
+  ; ip_busy = rx_path.ip_busy_o
+  ; udp_busy = rx_path.udp_busy_o
   ; frame_crc_ok = mac.frame_crc_ok
   ; in_payload = mac.in_payload
   ; frame_done = mac.frame_done
   }
+;;
+
+let hierarchical ?instance ?(rx_fifo_for_sim = false) scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"udp_rx_mac_top" (create ~rx_fifo_for_sim) i
 ;;

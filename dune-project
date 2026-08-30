@@ -13,6 +13,7 @@
   (dune (>= 3.15))
   core
   hardcaml
+  hardcaml_xilinx_reports
   ppx_hardcaml
   hardcaml_circuits
   hardcaml_waveterm

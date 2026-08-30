@@ -1,9 +1,9 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_crc CRC-32 generator for the transmit path. Accumulates bytes fed through it
-   and exposes the FCS (bitwise-NOT of accumulator, little-endian byte order) via a
-   byte_sel mux so tx_datapath can emit one FCS byte per clock during the Fcs state.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_crc.ml" *)
+(* CRC-32 generator for the transmit path. Accumulates transmitted bytes and exposes the
+   FCS (the bitwise complement of the accumulator in little-endian byte order) through a
+   byte-select mux so [Tx_datapath] can emit one FCS byte per clock in the [Fcs] state. *)
 
 open! Core
 open! Hardcaml
@@ -79,4 +79,9 @@ let create (scope : Scope.t) i : _ O.t =
   ; crc_out = crc_reg.value
   ; keep = lsb crc_reg.value
   }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_crc" create i
 ;;

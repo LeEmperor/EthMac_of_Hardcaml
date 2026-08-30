@@ -1,3 +1,9 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_crc.ml" *)
+(* CRC-32 checker for received Ethernet frame bytes. Accumulates valid input bytes and
+   indicates when the raw accumulator reaches the standard Ethernet residue. *)
+
 open! Core
 open! Hardcaml
 open! Signal
@@ -42,8 +48,6 @@ let crc_byte current_crc input_byte : Signal.t =
 ;;
 
 let create (scope : Scope.t) i : _ O.t =
-  (* scope shenanigans *)
-  let _scope : Scope.t = Scope.sub_scope scope "rx_crc_scope" in
   (* port aliase *)
   let clock = i.I.clock in
   let reset = i.I.reset in
@@ -63,4 +67,9 @@ let create (scope : Scope.t) i : _ O.t =
         [ when_ rx_data_valid [ crc_reg <-- crc_byte crc_reg.value rx_data ] ]
     ];
   { crc_valid = crc_reg.value ==: crc_residue; crc_out = crc_reg.value }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"rx_crc" create i
 ;;

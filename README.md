@@ -70,17 +70,18 @@ You will also want the following libraries for [OCaml](https://ocaml.org/)
 1. ```dune```
 2. ```core```
 3. ```hardcaml```
-4. ```ppx_hardcaml```
-5. ```ppx_jane```
-6. ```hardcaml_circuits```
-7. ```hardcaml_waveterm```
-8. ```hardcaml_step_testbench```
-9. ```alcotest```
-10. ```ocamlformat```
-11. ```ppx_js_style```
-12. ```ocaml-lsp-server``` (for editor integration)
+4. ```hardcaml_xilinx_reports```
+5. ```ppx_hardcaml```
+6. ```ppx_jane```
+7. ```hardcaml_circuits```
+8. ```hardcaml_waveterm```
+9. ```hardcaml_step_testbench```
+10. ```alcotest```
+11. ```ocamlformat```
+12. ```ppx_js_style```
+13. ```ocaml-lsp-server``` (for editor integration)
 
-Use ```opam install --switch=5.2.0+ox -y dune core hardcaml ppx_hardcaml ppx_jane hardcaml_circuits hardcaml_waveterm hardcaml_step_testbench alcotest ocamlformat ppx_js_style ocaml-lsp-server``` to install the set of dependencies manually,
+Use ```opam install --switch=5.2.0+ox -y dune core hardcaml hardcaml_xilinx_reports ppx_hardcaml ppx_jane hardcaml_circuits hardcaml_waveterm hardcaml_step_testbench alcotest ocamlformat ppx_js_style ocaml-lsp-server``` to install the set of dependencies manually,
 
 ```OR``` let the bootstrap ```--install-deps``` flag handle it for you. You can also opt to install the main OxCaml switch yourself, and then let the dependencies afterwards get handled by ```./bootstrap.sh```.
 
@@ -134,14 +135,14 @@ comment-toggling of the generator source:
 ```sh
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp
-./scripts/with-switch.sh dune exec lib/common/generate.exe -- validation
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac-validation
 ```
 
 | target | what it emits |
 | --- | --- |
 | `mac` | standalone Ethernet MAC |
 | `udp` | UDP-over-MAC stack |
-| `validation` | board MAC harness (bare MAC, both directions) |
+| `mac-validation` | board MAC harness (bare MAC, both directions) |
 | `udp-tx-validation` | board UDP TX harness (fpga -> laptop, `btn[3]`) |
 | `udp-rx-validation` | board UDP RX harness (laptop -> fpga, 1 B/s drain) |
 | `udp-duplex-validation` | full-duplex UDP harness, decoupled TX + RX |
@@ -150,6 +151,9 @@ comment-toggling of the generator source:
 Run `dune exec lib/common/generate.exe -- -help` for the current list. Output paths are
 resolved against the repo root, so the RTL lands in a stable place no matter where the
 binary ran.
+
+Synthesis estimates and resource reports use a separate executable; see
+[`synthesis/README.md`](synthesis/README.md).
 
 <br>
 

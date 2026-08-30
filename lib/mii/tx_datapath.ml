@@ -1,7 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_datapath This module serves as the datapath for my Hardcaml Ethernet MAC
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_datapath.ml" *)
+(* Byte-level datapath for the Hardcaml Ethernet MAC transmit path. *)
 
 open! Core
 open! Hardcaml
@@ -91,4 +91,9 @@ let create ?(ethertype = 0x9999) (scope : Scope.t) i : _ O.t =
     -- "byte_mux"
   in
   { byte_out = byte_mux; s_axis_tready = zero 1; keep = lsb byte_mux }
+;;
+
+let hierarchical ?instance ?(ethertype = 0x9999) scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_datapath" (create ~ethertype) i
 ;;

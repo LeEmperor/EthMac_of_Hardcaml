@@ -19,6 +19,7 @@ REQUIRED_PACKAGES=(
   dune
   core
   hardcaml
+  hardcaml_xilinx_reports
   ppx_hardcaml
   hardcaml_circuits
 )

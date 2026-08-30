@@ -1,9 +1,9 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Rx_byte_assembler Pairs the PHY's 4-bit MII nibbles into bytes, lo nibble
-   first. The first nibble of a pair lands in the low half of [byte_out], the second in
-   the high half; [byte_valid] pulses for one cycle as the second nibble completes a byte.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "rx_byte_assembler.ml" *)
+(* Pairs the PHY's 4-bit MII nibbles into bytes, low nibble first. The first nibble of a
+   pair lands in the low half of [byte_out], the second in the high half; [byte_valid]
+   pulses for one cycle as the second nibble completes a byte. *)
 
 open! Core
 open! Hardcaml
@@ -55,4 +55,9 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
         ]
     ];
   { O.byte_out = r.nibble_hi.value @: r.nibble_lo.value; byte_valid = r.byte_valid.value }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"rx_byte_assembler" create i
 ;;

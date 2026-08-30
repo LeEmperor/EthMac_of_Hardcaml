@@ -1,11 +1,11 @@
 (* Module: Board_scaffolding
 
    Shared Arty A7-100T board plumbing for the validation harnesses
-   (Mac_top_validation_harness, Udp_mac_top_validation_harness). This is the
-   domain-agnostic scaffolding every board bring-up top needs — per-domain reset
-   synchronizers, the 25 MHz PHY reference clock, PHY hard-reset sequencing, the heartbeat
-   LED, the RX-drain pulse, and clock-domain-crossing helpers — factored out so each
-   harness only supplies its own stimulus FSM, the core it wraps, and its LED map.
+   (Mac_validation_harness, Udp_tx_validation_harness). This is the domain-agnostic
+   scaffolding every board bring-up top needs — per-domain reset synchronizers, the 25 MHz
+   PHY reference clock, PHY hard-reset sequencing, the heartbeat LED, the RX-drain pulse,
+   and clock-domain-crossing helpers — factored out so each harness only supplies its own
+   stimulus FSM, the core it wraps, and its LED map.
 
    These are deliberately plain helper functions, NOT a Hardcaml sub-module: they build
    signals directly into the caller's circuit (no I/O record, no hierarchy boundary), so

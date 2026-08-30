@@ -1,8 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_controller This module serves as an FSM controller for the transmit path of
-   my Hardcaml ethernet MAC.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_controller.ml" *)
+(* FSM controller for the transmit path of the Hardcaml Ethernet MAC. *)
 
 open! Core
 open! Hardcaml
@@ -238,4 +237,9 @@ let create (scope : Scope.t) i : _ O.t =
   ; tx_busy = i_regs.busy.value
   ; pad = padding_now
   }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_controller" create i
 ;;

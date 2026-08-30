@@ -1,8 +1,8 @@
 (*
- * Module: Udp_mac_top_validation_harness
+ * Module: Udp_tx_validation_harness
  * Board-level validation harness for the UDP-over-MAC TX stack on the Arty A7-100T.
  *
- * Sibling of Mac_top_validation_harness — same purpose (throwaway silicon bring-up
+ * Sibling of Mac_validation_harness — same purpose (throwaway silicon bring-up
  * scaffolding, kept OUTSIDE lib/), same Arty_board_top.I/O pin contract, and it
  * shares ALL the board plumbing (clocking, PHY reset, per-domain reset sync,
  * heartbeat, RX drain, CDC) via Board_scaffolding. The ONLY things that differ
@@ -157,7 +157,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let rx_drain = Board_scaffolding.rx_drain ~scope ~clock:i.I.eth_tx_clk ~reset:tx_rst in
   (* ── The UDP-over-MAC stack ───────────────────────────────────────────────── *)
   let udp_inst =
-    Udp_mac_top.create
+    Udp_mac_top.hierarchical
       scope
       { Udp_mac_top.I.rx_clock = i.I.eth_rx_clk
       ; rx_reset = rx_rst
@@ -189,9 +189,10 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let frame_done_tx = pulse_sync_tx udp_inst.frame_done -- "frame_done_tx" in
   (* ── Register block (STUB) — reused verbatim from the MAC harness ─────────── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.create
+    Mac_validation_harness_regs.hierarchical
+      ~instance:"validation_regs"
       scope
-      { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
+      { Mac_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
       ; s_axi_awaddr = zero 4
       ; s_axi_awvalid = gnd

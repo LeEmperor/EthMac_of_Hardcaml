@@ -179,8 +179,9 @@ struct
   let create scope (i : _ I.t) =
     let udp_ready = Signal.wire 1 in
     let ip =
-      Ip.create
-        (Scope.sub_scope scope "ipv4_rx")
+      Ip.hierarchical
+        ~instance:"ipv4_rx"
+        scope
         { Ip.I.clock = i.clock
         ; reset = i.reset
         ; en = i.en
@@ -194,8 +195,9 @@ struct
         }
     in
     let udp =
-      Udp.create
-        (Scope.sub_scope scope "udp_rx")
+      Udp.hierarchical
+        ~instance:"udp_rx"
+        scope
         { Udp.I.clock = i.clock
         ; reset = i.reset
         ; en = i.en

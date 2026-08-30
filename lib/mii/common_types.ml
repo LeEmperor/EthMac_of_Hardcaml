@@ -1,8 +1,8 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Common Types This module serves the purpose of an sv_pkg for common types and
-   functions between different module participants - like how _intf works.
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "common_types.ml" *)
+(* Common types and functions shared by the MII MAC modules, serving a role similar to a
+   SystemVerilog package. *)
 
 open! Core
 open! Hardcaml

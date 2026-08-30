@@ -37,7 +37,7 @@ Three modes:
                exercise the RX path. Targets the Udp_rx_mac_top RX stack
                (Ipv4_rx + Udp_rx stacked on Mac_top's RX path), which is
                sim-verified and driven on the board by
-               udp_rx_mac_top_validation_harness. The frame's dst UDP port
+               udp_rx_validation_harness. The frame's dst UDP port
                (0x1235) and ethertype (0x0800) match what that harness accepts.
 
                Confirmation is VISUAL on the board LEDs — this is fire-and-forget;
@@ -86,7 +86,7 @@ DST_IP = "192.168.1.1"
 SRC_PORT = 0x1234
 DST_PORT = 0x1235
 
-# The harness (udp_mac_top_validation_harness.ml) streams app_payload_len bytes
+# The harness (udp_tx_validation_harness.ml) streams app_payload_len bytes
 # of incrementing data 0x01, 0x02, …; default there is 18.
 DEFAULT_APP_LEN = 18
 DEFAULT_IFACE = "enx207bd25880ef"
@@ -312,9 +312,9 @@ def send(iface, app_len, count, pattern):
     print(f"  app payload: {hexdump(app)}")
     sendp(frame, iface=iface, count=count, verbose=True)
 
-    # Confirmation is on the board (udp_rx_mac_top_validation_harness); no host
+    # Confirmation is on the board (udp_rx_validation_harness); no host
     # readback yet. Print the LED checklist so it's clear what a PASS looks like.
-    print("\nConfirm on the RX board harness (udp_rx_mac_top_validation_harness):")
+    print("\nConfirm on the RX board harness (udp_rx_validation_harness):")
     print("  led0_g  saw_valid_datagram  -> lights and stays lit")
     print("  led2_g  checksum_ok (IPv4)  -> lit")
     print("  led2_r / led3_r  crc_error  -> DARK (good frame)")

@@ -1,8 +1,7 @@
-(* Bohdan Purtell University of Florida
-
-   Module: Tx_byte_disassembler This module serves as the nibble-serializer for my
-   Hardcaml Ethernet MAC
-*)
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "tx_byte_disassembler.ml" *)
+(* Nibble serializer for the Hardcaml Ethernet MAC transmit path. *)
 
 open! Core
 open! Hardcaml
@@ -106,4 +105,9 @@ let create (scope : Scope.t) i : _ O.t =
   ; tx_d = i_wires.output_nibble.value
   ; tx_en = i_wires.nibble_valid.value
   }
+;;
+
+let hierarchical ?instance scope i =
+  let module H = Hierarchy.In_scope (I) (O) in
+  H.hierarchical ?instance ~scope ~name:"tx_byte_disassembler" create i
 ;;

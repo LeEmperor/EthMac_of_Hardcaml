@@ -7,7 +7,8 @@
  (modules
   udp_duplex_mac_top_testbench
   udp_duplex_mac_top_unit_quickcheck_tests
-  udp_duplex_mac_top_expect_tests)
+  udp_duplex_mac_top_expect_tests
+  udp_duplex_mac_top_hierarchy_tests)
  ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
  (inline_tests
   (flags

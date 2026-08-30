@@ -7,10 +7,10 @@
  * This is a straight MERGE of the two single-direction harnesses' bodies around the
  * single-Mac_top [Udp_duplex_mac_top]:
  *   - TX side: the btn[3] one-shot [Tx_trigger_states] FSM from
- *     [Udp_mac_top_validation_harness] — one press emits one UDP datagram
+ *     [Udp_tx_validation_harness] — one press emits one UDP datagram
  *     (fpga -> laptop), validated host-side by `udp_app.py --validate`.
  *   - RX side: the 1-byte/sec [rx_drain] on [app_tready] from
- *     [Udp_rx_mac_top_validation_harness] — a host-sent datagram (laptop -> fpga)
+ *     [Udp_rx_validation_harness] — a host-sent datagram (laptop -> fpga)
  *     is parsed and its recovered payload walks out led[3:0] one byte/second.
  *     Send `--pattern alt` (0xAA/0x55) and led[3:0] toggles 0xA <-> 0x5.
  * The two directions are INDEPENDENT — there is no RX->TX coupling here (that is
@@ -136,7 +136,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let rx_drain = Board_scaffolding.rx_drain ~scope ~clock:i.I.eth_tx_clk ~reset:tx_rst in
   (* ── The full-duplex UDP-over-MAC stack (one Mac_top, both directions) ────── *)
   let udp_inst =
-    Udp_duplex_mac_top.create
+    Udp_duplex_mac_top.hierarchical
       ~rx_fifo_for_sim:false
       scope
       { Udp_duplex_mac_top.I.rx_clock = i.I.eth_rx_clk
@@ -188,9 +188,10 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let frame_done_tx = pulse_sync_tx udp_inst.frame_done -- "frame_done_tx" in
   (* ── Register block (STUB) — reused verbatim; taps the CDC'd MAC RX status ─── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.create
+    Mac_validation_harness_regs.hierarchical
+      ~instance:"validation_regs"
       scope
-      { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
+      { Mac_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
       ; s_axi_awaddr = zero 4
       ; s_axi_awvalid = gnd
