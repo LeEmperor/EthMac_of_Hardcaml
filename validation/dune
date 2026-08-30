@@ -18,10 +18,10 @@
   hardcaml_circuits)
  (modules
   board_scaffolding
-  mac_top_validation_harness
-  mac_top_validation_harness_regs
-  udp_mac_top_validation_harness
-  udp_rx_mac_top_validation_harness
+  mac_validation_harness
+  mac_validation_harness_regs
+  udp_tx_validation_harness
+  udp_rx_validation_harness
   udp_duplex_validation_harness
   udp_loopback_validation_harness)
  (flags

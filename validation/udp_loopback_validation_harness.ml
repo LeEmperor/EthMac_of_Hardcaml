@@ -118,10 +118,10 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* ── Register block (STUB) — reused verbatim from the siblings, AXI-Lite tied off. This
      board DOES transmit (the echo), so tx_en carries the real value. ── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.hierarchical
+    Mac_validation_harness_regs.hierarchical
       ~instance:"validation_regs"
       scope
-      { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
+      { Mac_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
       ; s_axi_awaddr = zero 4
       ; s_axi_awvalid = gnd

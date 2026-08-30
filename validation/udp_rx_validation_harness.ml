@@ -1,7 +1,7 @@
 (*
- * Module: Udp_rx_mac_top_validation_harness
+ * Module: Udp_rx_validation_harness
  * Board-level validation harness for the UDP-over-MAC *receive* stack on the
- * Arty A7-100T — the RX mirror of Udp_mac_top_validation_harness.
+ * Arty A7-100T — the RX mirror of Udp_tx_validation_harness.
  *
  * Same purpose (throwaway silicon bring-up scaffolding, kept OUTSIDE lib/), same
  * Arty_board_top.I/O pin contract, and it shares ALL the board plumbing (clocking,
@@ -135,10 +135,10 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* ── Register block (STUB) — reused verbatim from the TX harness, AXI-Lite tied off. TX
      is idle here so tx_en = gnd. Consumes the CDC'd MAC RX status. ────── *)
   let regs_inst =
-    Mac_top_validation_harness_regs.hierarchical
+    Mac_validation_harness_regs.hierarchical
       ~instance:"validation_regs"
       scope
-      { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
+      { Mac_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
       ; s_axi_awaddr = zero 4
       ; s_axi_awvalid = gnd

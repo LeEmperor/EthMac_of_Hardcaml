@@ -1,5 +1,5 @@
 (*
- * Module: Mac_top_validation_harness
+ * Module: Mac_validation_harness
  * Board-level validation harness for the full-duplex MII MAC on the Arty A7-100T.
  *
  * This is the *active* top used for hardware bring-up. It lives outside lib/ on
@@ -199,10 +199,10 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
      wired back into the MAC, use the mac_top.ml wire-back pattern (Signal.wire stubs) to
      break the ordering/comb loop. *)
   let regs_inst =
-    Mac_top_validation_harness_regs.hierarchical
+    Mac_validation_harness_regs.hierarchical
       ~instance:"validation_regs"
       scope
-      { Mac_top_validation_harness_regs.I.clock = i.I.eth_tx_clk
+      { Mac_validation_harness_regs.I.clock = i.I.eth_tx_clk
       ; reset = tx_rst
       ; s_axi_awaddr = zero 4
       ; s_axi_awvalid = gnd
