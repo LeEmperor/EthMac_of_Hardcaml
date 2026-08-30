@@ -135,14 +135,14 @@ comment-toggling of the generator source:
 ```sh
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp
-./scripts/with-switch.sh dune exec lib/common/generate.exe -- validation
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac-validation
 ```
 
 | target | what it emits |
 | --- | --- |
 | `mac` | standalone Ethernet MAC |
 | `udp` | UDP-over-MAC stack |
-| `validation` | board MAC harness (bare MAC, both directions) |
+| `mac-validation` | board MAC harness (bare MAC, both directions) |
 | `udp-tx-validation` | board UDP TX harness (fpga -> laptop, `btn[3]`) |
 | `udp-rx-validation` | board UDP RX harness (laptop -> fpga, 1 B/s drain) |
 | `udp-duplex-validation` | full-duplex UDP harness, decoupled TX + RX |

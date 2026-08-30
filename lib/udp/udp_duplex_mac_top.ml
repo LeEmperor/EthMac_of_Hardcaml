@@ -8,7 +8,7 @@
  * [Udp_rx_mac_top] (RX stack) around ONE [Mac_top]. The two directions are
  * INDEPENDENT: this top owns no coupling between them (that is Harness #2's
  * RX->TX bridge; see UDP_FULL_DUPLEX_HARNESS_PLAN.md). It is the UDP mirror of the
- * bare-MAC [mac_top_validation_harness], which already drives a btn[3] TX burst and
+ * bare-MAC [mac_validation_harness], which already drives a btn[3] TX burst and
  * a 1-byte/sec RX drain side-by-side on a single [Mac_top].
  *
  *     btn TX app ─→ Udp_tx ─→ Ipv4_tx ─→ Mac_top.s_axis ─→ PHY TX   (fpga -> laptop)

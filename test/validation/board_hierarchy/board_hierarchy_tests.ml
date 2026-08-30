@@ -4,7 +4,7 @@
    to. Board clock/reset/CDC glue (reset synchronizers, [Clk_div], [Second_pulse], the
    pulse synchronizers) stays inline on purpose, so it must NOT appear here.
 
-   [Mac_top_validation_harness_regs] is a deliberate exception. Every harness ties its
+   [Mac_validation_harness_regs] is a deliberate exception. Every harness ties its
    AXI-Lite inputs off and observes none of its outputs, so the stub is recorded in the
    circuit database but is unreachable from the board outputs and is therefore pruned out
    of the top exactly as its inlined logic used to be. That is asserted below rather than
@@ -74,7 +74,7 @@ let mac_children =
 
 let tx_stack_children = [ "ipv4_tx"; "udp_ipv4_tx"; "udp_tx" ]
 let rx_stack_children = [ "ipv4_rx"; "udp_ipv4_rx"; "udp_rx" ]
-let regs = "mac_top_validation_harness_regs"
+let regs = "mac_validation_harness_regs"
 let sorted names = List.sort names ~compare:String.compare
 
 let check_harness ~name ~create ~expected_instantiations ~expected_children =
@@ -139,24 +139,24 @@ let check_harness ~name ~create ~expected_instantiations ~expected_children =
 
 let%test_unit "the bare-MAC board harness has a resolved hierarchy" =
   check_harness
-    ~name:"mac_top_validation_harness"
-    ~create:Mac_top_validation_harness.create
+    ~name:"mac_validation_harness"
+    ~create:Mac_validation_harness.create
     ~expected_instantiations:[ "mac_top" ]
     ~expected_children:mac_children
 ;;
 
 let%test_unit "the UDP TX board harness has a resolved hierarchy" =
   check_harness
-    ~name:"udp_mac_top_validation_harness"
-    ~create:Udp_mac_top_validation_harness.create
+    ~name:"udp_tx_validation_harness"
+    ~create:Udp_tx_validation_harness.create
     ~expected_instantiations:[ "udp_mac_top" ]
     ~expected_children:(("udp_mac_top" :: mac_children) @ tx_stack_children)
 ;;
 
 let%test_unit "the UDP RX board harness has a resolved hierarchy" =
   check_harness
-    ~name:"udp_rx_mac_top_validation_harness"
-    ~create:Udp_rx_mac_top_validation_harness.create
+    ~name:"udp_rx_validation_harness"
+    ~create:Udp_rx_validation_harness.create
     ~expected_instantiations:[ "udp_rx_mac_top" ]
     ~expected_children:(("udp_rx_mac_top" :: mac_children) @ rx_stack_children)
 ;;

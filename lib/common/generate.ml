@@ -11,7 +11,7 @@ open! Signal
  *
  *   dune exec lib/common/generate.exe -- mac
  *   dune exec lib/common/generate.exe -- udp
- *   dune exec lib/common/generate.exe -- validation
+ *   dune exec lib/common/generate.exe -- mac-validation
  *   dune exec lib/common/generate.exe -- udp-tx-validation
  *   dune exec lib/common/generate.exe -- udp-rx-validation
  *   dune exec lib/common/generate.exe -- udp-loopback-validation
@@ -19,9 +19,9 @@ open! Signal
  * Targets:
  *   mac                    standalone Ethernet MAC        -> hardcaml_eth_mac.v
  *   udp                    UDP-over-MAC stack             -> hardcaml_udp_with_mac.v
- *   validation             board MAC harness (bare MAC, both dirs) -> validation/mac_top_validation_harness.v
- *   udp-tx-validation      board UDP TX harness (fpga->laptop, btn[3]) -> validation/udp_mac_top_validation_harness.v
- *   udp-rx-validation      board UDP RX harness (laptop->fpga, 1B/s drain) -> validation/udp_rx_mac_top_validation_harness.v
+ *   mac-validation         board MAC harness (bare MAC, both dirs) -> validation/mac_validation_harness.v
+ *   udp-tx-validation      board UDP TX harness (fpga->laptop, btn[3]) -> validation/udp_tx_validation_harness.v
+ *   udp-rx-validation      board UDP RX harness (laptop->fpga, 1B/s drain) -> validation/udp_rx_validation_harness.v
  *   udp-duplex-validation  board full-duplex UDP harness, DECOUPLED TX+RX -> validation/udp_duplex_validation_harness.v
  *   udp-loopback-validation board echo/loopback UDP harness, RX->TX bridge -> validation/udp_loopback_validation_harness.v
  *
@@ -37,17 +37,13 @@ module Circ_mac = Circuit.With_interface (Mac_top.I) (Mac_top.O)
 module Circ_udp = Circuit.With_interface (Udp_mac_top.I) (Udp_mac_top.O)
 
 module Circ_validation =
-  Circuit.With_interface (Mac_top_validation_harness.I) (Mac_top_validation_harness.O)
+  Circuit.With_interface (Mac_validation_harness.I) (Mac_validation_harness.O)
 
 module Circ_udp_validation =
-  Circuit.With_interface
-    (Udp_mac_top_validation_harness.I)
-    (Udp_mac_top_validation_harness.O)
+  Circuit.With_interface (Udp_tx_validation_harness.I) (Udp_tx_validation_harness.O)
 
 module Circ_udp_rx_validation =
-  Circuit.With_interface
-    (Udp_rx_mac_top_validation_harness.I)
-    (Udp_rx_mac_top_validation_harness.O)
+  Circuit.With_interface (Udp_rx_validation_harness.I) (Udp_rx_validation_harness.O)
 
 module Circ_udp_duplex_validation =
   Circuit.With_interface
@@ -98,45 +94,45 @@ let udp_cmd =
       (Circ_udp.create_exn ~name:"Udp_stack_w_mac" (Udp_mac_top.create scope)))
 ;;
 
-let validation_cmd =
+let mac_validation_cmd =
   target
     ~summary:
-      "board MAC harness (bare MAC, both dirs) -> validation/mac_top_validation_harness.v"
+      "board MAC harness (bare MAC, both dirs) -> validation/mac_validation_harness.v"
     ~build:(fun scope ->
       emit
         ~scope
-        ~path:"validation/mac_top_validation_harness.v"
+        ~path:"validation/mac_validation_harness.v"
         (Circ_validation.create_exn
-           ~name:"mac_top_validation_harness"
-           (Mac_top_validation_harness.create scope)))
+           ~name:"mac_validation_harness"
+           (Mac_validation_harness.create scope)))
 ;;
 
 let udp_tx_validation_cmd =
   target
     ~summary:
       "board UDP TX harness (fpga->laptop, btn[3]) -> \
-       validation/udp_mac_top_validation_harness.v"
+       validation/udp_tx_validation_harness.v"
     ~build:(fun scope ->
       emit
         ~scope
-        ~path:"validation/udp_mac_top_validation_harness.v"
+        ~path:"validation/udp_tx_validation_harness.v"
         (Circ_udp_validation.create_exn
-           ~name:"udp_mac_top_validation_harness"
-           (Udp_mac_top_validation_harness.create scope)))
+           ~name:"udp_tx_validation_harness"
+           (Udp_tx_validation_harness.create scope)))
 ;;
 
 let udp_rx_validation_cmd =
   target
     ~summary:
       "board UDP RX harness (laptop->fpga, 1B/s drain) -> \
-       validation/udp_rx_mac_top_validation_harness.v"
+       validation/udp_rx_validation_harness.v"
     ~build:(fun scope ->
       emit
         ~scope
-        ~path:"validation/udp_rx_mac_top_validation_harness.v"
+        ~path:"validation/udp_rx_validation_harness.v"
         (Circ_udp_rx_validation.create_exn
-           ~name:"udp_rx_mac_top_validation_harness"
-           (Udp_rx_mac_top_validation_harness.create scope)))
+           ~name:"udp_rx_validation_harness"
+           (Udp_rx_validation_harness.create scope)))
 ;;
 
 let udp_duplex_validation_cmd =
@@ -173,7 +169,7 @@ let () =
        ~summary:"Hardcaml RTL generators (pick a target)"
        [ "mac", mac_cmd
        ; "udp", udp_cmd
-       ; "validation", validation_cmd
+       ; "mac-validation", mac_validation_cmd
        ; "udp-tx-validation", udp_tx_validation_cmd
        ; "udp-rx-validation", udp_rx_validation_cmd
        ; "udp-duplex-validation", udp_duplex_validation_cmd
