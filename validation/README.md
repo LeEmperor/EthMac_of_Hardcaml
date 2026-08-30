@@ -15,6 +15,26 @@ the host-to-FPGA direction is checked using the board LEDs. For an automated
 host-to-FPGA-to-host echo test, use the loopback harness described near the end of this
 document.
 
+## Harnesses in this directory
+
+| Generate target | Synthesis top | Validates | Host tool |
+| --- | --- | --- | --- |
+| `mac-validation` | `mac_validation_harness` | Bare MAC only, both directions (no IPv4/UDP) | `send_test_frames.py` |
+| `udp-tx-validation` | `udp_tx_validation_harness` | UDP TX only (FPGA to host) | `udp_app.py --validate` |
+| `udp-rx-validation` | `udp_rx_validation_harness` | UDP RX only (host to FPGA) | `udp_app.py --send` |
+| `udp-duplex-validation` | `udp_duplex_validation_harness` | Both directions, decoupled | `udp_app.py --validate` and `--send` |
+| `udp-loopback-validation` | `udp_loopback_validation_harness` | Both directions, RX to TX echo bridge | `udp_app.py --echo` |
+
+Every harness reuses the same `Arty_board_top` pin contract, so
+`validation/constraints/unified_tx_rx.xdc` and the `btn[0]` reset / `sw[0]` enable controls
+apply to all five, as does the host interface setup below. The body of this document is the
+duplex runbook; the single-direction and bare-MAC harnesses are covered under
+[Other validation harnesses](#other-validation-harnesses), and the loopback harness under
+[Automated echo alternative](#automated-echo-alternative).
+
+Bring-up order is bottom-up: `mac-validation` first to prove the PHY, MII timing, and FCS,
+then a single direction, then duplex or loopback.
+
 ## Generate and check the duplex RTL
 
 From the repository root:
@@ -200,6 +220,117 @@ reach the UDP payload LEDs, while background IPv4 UDP traffic can change the ret
 payload display and set `led0_g`. Good background traffic should not set the red CRC-error
 LEDs; persistent `led2_r`/`led3_r` indicates a separate receive/FCS problem.
 
+## Other validation harnesses
+
+These share the host interface setup, the board start sequence, and the background-traffic
+notes above. Only the generate command, controls, and LED map differ.
+
+### Bare MAC (`mac-validation`)
+
+The first bring-up step: no IPv4 or UDP, just the MII MAC in both directions.
+
+```bash
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac-validation
+```
+
+Emits `validation/mac_validation_harness.v`; use `mac_validation_harness` as the synthesis
+top.
+
+`btn[3]` burst-fills the TX FIFO with a fixed 46-byte payload and transmits it in one shot.
+46 is the minimum Ethernet payload; the TX controller does not pad below that.
+
+The MAC defaults to EtherType `0x9999`, so these frames are deliberately not IPv4 and the
+host kernel ignores them. Use `eth.src == 02:00:00:00:00:01` in Wireshark to see them, not a
+UDP filter.
+
+For the receive direction, `send_test_frames.py` sends one broadcast `0x9999` frame with a
+64-byte alternating `0x55`/`0xAA` payload. It has no argument parsing, so edit the `IFACE`
+constant at the top of the file if the interface is not `enx207bd25880ef`.
+
+```bash
+sudo python3 validation/send_test_frames.py
+```
+
+| LED | Meaning |
+| --- | --- |
+| `led[3:0]` | Low nibble of the last drained RX byte, one byte per second |
+| `led0_r` | Fabric heartbeat |
+| `led1_r` | MAC TX busy |
+| `led1_g` | PHY ready |
+| `led2_g` | Last frame CRC OK |
+| `led2_b` | MAC RX payload active |
+| `led3_r` | Last frame CRC bad |
+
+### UDP transmit only (`udp-tx-validation`)
+
+Adds the IPv4 and UDP TX headers on top of the MAC; the RX path is the bare MAC drain, so
+received bytes are raw Ethernet payload rather than recovered UDP payload.
+
+```bash
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp-tx-validation
+```
+
+Emits `validation/udp_tx_validation_harness.v`; synthesis top `udp_tx_validation_harness`.
+
+`btn[3]` emits one UDP datagram. Unlike the bare MAC harness this drives the UDP
+*application* interface, so the payload length is not pinned to 46 and the IPv4 and UDP
+headers are synthesized in hardware. EtherType is `0x0800`, so Wireshark dissects these as
+real UDP.
+
+Validate from the host with:
+
+```bash
+sudo python3 validation/udp_app.py --validate --iface "$FPGA_IFACE" --app-len 18 --count 1
+```
+
+| LED | Meaning |
+| --- | --- |
+| `led[3:0]` | Low nibble of the last drained RX byte |
+| `led0_r` | Fabric heartbeat |
+| `led1_r` | MAC TX busy |
+| `led1_g` | PHY ready |
+| `led1_b` | UDP TX busy |
+| `led2_r` | RX AXI-Stream CRC error (`tuser` at `tlast`) |
+| `led2_g` | Last frame CRC OK |
+| `led2_b` | MAC RX payload active |
+| `led3_r` | Last frame CRC bad |
+
+### UDP receive only (`udp-rx-validation`)
+
+The mirror image: the full MAC to IPv4 to UDP receive chain, with the MII TX pins held idle.
+Nothing is ever transmitted, so there is no `btn[3]` stimulus.
+
+```bash
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp-rx-validation
+```
+
+Emits `validation/udp_rx_validation_harness.v`; synthesis top `udp_rx_validation_harness`.
+
+```bash
+sudo python3 validation/udp_app.py --send --iface "$FPGA_IFACE" --pattern alt --app-len 18 --count 1
+```
+
+The recovered payload drains one application byte per second, which backpressures the whole
+UDP to IPv4 to MAC chain and parks the datagram in the MAC async RX FIFO. With `--pattern
+alt` the payload LEDs toggle `0xA` and `0x5` once per second, confirming every byte transits
+the L2 to L3 to L4 chain intact. An 18-byte payload therefore stays visible for about 18
+seconds.
+
+| LED | Meaning |
+| --- | --- |
+| `led[3:0]` | Low nibble of the currently drained UDP application byte |
+| `led0_r` | Fabric heartbeat |
+| `led0_g` | Saw a UDP application start, held until reset |
+| `led1_g` | PHY ready |
+| `led1_b` | UDP RX parser busy |
+| `led2_r` | Held RX CRC error |
+| `led2_g` | IPv4 header checksum valid |
+| `led2_b` | MAC RX payload active |
+| `led3_r` | RX CRC-error mirror |
+
+Verification is by eye here. To assert on the receive path from the host instead, use the
+loopback harness below.
+
 ## Automated echo alternative
 
 For a host-asserted test of both directions without relying on the payload LEDs, generate
@@ -222,6 +353,26 @@ sudo python3 validation/udp_app.py \
 
 `--echo` requires `udp_loopback_validation_harness`; it is not supported by the
 decoupled `udp_duplex_validation_harness`.
+
+`--echo` also requires `--app-len 6` or greater. The first 4 bytes of each application
+payload are a nonce (the magic `SQ` plus a 16-bit sequence number) used to attribute an echo
+to the probe that produced it, so a shorter payload leaves no room for pattern bytes.
+
+Three flags tune the echo timing. The defaults are usually right for a single probe, but
+`--count 10` above puts real pressure on the bridge, so reach for these before concluding
+that frames are being dropped:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--timeout` | `2.0` | Per-probe deadline in seconds. An echo arriving after it is reported `LATE`, not lost. |
+| `--gap` | `0.05` | Seconds between probes. The RX to TX bridge handles one frame at a time, so a smaller gap raises the drop rate. |
+| `--drain` | same as `--timeout` | Seconds to keep listening after the last probe. A frame is only called lost if it misses both its deadline and this window. |
+
+Every probe carries its own sequence nonce and a single sniffer stays armed for the whole
+run, so a slow echo is still attributed to the right probe even when it lands during a later
+probe's window. If the run reports `LATE` rather than lost, widen `--timeout`; if stragglers
+land after the run ends, widen `--drain`; if echoes are genuinely lost, widen `--gap` first,
+since the single-frame bridge is the usual cause.
 
 ## Restore normal host networking
 
