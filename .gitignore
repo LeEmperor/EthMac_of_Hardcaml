@@ -21,3 +21,14 @@ CLAUDE.md
 _opam/
 env.sh
 *.vcd
+
+# release staging (build products; regenerated per release)
+MANIFEST.txt
+SHA256SUMS
+release-group/*
+!release-group/README.md
+
+# vivado / python scratch
+validation/vivado25_proj/
+__pycache__/
+.Xil/
