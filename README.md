@@ -152,8 +152,27 @@ Run `dune exec lib/common/generate.exe -- -help` for the current list. Output pa
 resolved against the repo root, so the RTL lands in a stable place no matter where the
 binary ran.
 
+To emit every target at once, plus a `MANIFEST.txt` recording the commit and toolchain
+that produced them, use `./scripts/generate_rtl.py` (`--list` shows the targets).
+
 Synthesis estimates and resource reports use a separate executable; see
 [`synthesis/README.md`](synthesis/README.md).
+
+<br>
+
+---
+
+# Generating Release Candidates
+
+`./scripts/make-release.sh --version v1.3 --require-clean` regenerates the RTL, stages the
+release bundles into `release-group/`, checksums and verifies them, and writes the zips to
+upload. `--require-clean` refuses to run against uncommitted changes so the manifest names
+a published commit.
+
+It does not invoke Vivado: the bitstream and board reports are copied from the existing
+project run, so re-run implementation first if the RTL changed. See
+[`release-group/README.md`](release-group/README.md) for the bundle layout and the full
+release procedure.
 
 <br>
 
