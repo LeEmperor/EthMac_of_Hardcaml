@@ -105,11 +105,24 @@ let fcs_word ~fcs ~index =
   }
 ;;
 
+module I_Regs = struct
+  type 'a t = { bruh : 'a } [@@deriving hardcaml]
+end
+
+[@@@ocamlformat "disable"]
 let create (scope : Scope.t) (i : _ I.t) : _ O.t =
-  let ( -- ) = Scope.naming scope in
+  (* spec *)
   let spec = Reg_spec.create ~clock:i.clock_i ~clear:i.reset_i () in
+
+  let ( -- ) = Scope.naming scope in
+
+  (* fun helper -> makes an Always Reg out of something -> I think my I_Regs approach is better *)
+  (* debugability on those might be a bit difficult; we'll see *)
   let reg_var width = Always.Variable.reg ~enable:vdd ~width spec in
+
+  (* new approach to doing state; may move back to a module States declaration *)
   let state = reg_var 3 in
+
   let crc = reg_var 32 in
   let covered_count = reg_var 17 in
   let stored_fcs = reg_var 32 in
@@ -120,29 +133,49 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let bytes = reg_var 64 in
   let underflows = reg_var 64 in
   let underflow_sticky = reg_var 1 in
+
+  (* one day i will write a ppx that does this for me *)
   let is_wait = state.value ==:. state_wait in
   let is_body = state.value ==:. state_body in
-  let is_pad = state.value ==:. state_pad in
-  let is_fcs = state.value ==:. state_fcs in
-  let is_ifg = state.value ==:. state_ifg in
+  let is_pad  = state.value ==:. state_pad in
+  let is_fcs  = state.value ==:. state_fcs in
+  let is_ifg  = state.value ==:. state_ifg in
+
+  (* thank God I wrote those helper functions *)
   let start_word =
-    Xgmii.of_lane_bytes
-      ([ Xgmii.Control_character.start ] @ List.init 6 ~f:(Fn.const 0x55) @ [ 0xd5 ])
-      ~control:0x01
+    Xgmii.of_lane_bytes (* build us a word map out of ints *)
+      ([ Xgmii.Control_character.start ] @  (* /S *)
+       List.init 6 ~f:(Fn.const 0x55) @     (* 0x55 *)
+       [ 0xd5 ]                             (* SFD *)
+      )
+      ~control:0x01 (* /S is a control char - use a 0x55, but that as txc[where[/S]] means /S in XGMII *)
   in
+
+  (* combo assignment on the body data and whether or not the keep lane corresponds with it;
+    one may consider moving this to a common function library?
+  *)
   let masked_body_data =
     concat_lsb
-      (List.init 8 ~f:(fun lane ->
-         mux2 (bit i.buffer_keep_i ~pos:lane) (byte i.buffer_data_i lane) (zero 8)))
+      (List.init 8 ~f:(fun lane -> (* for each lane *)
+                        mux2 (bit i.buffer_keep_i ~pos:lane)  (* select on the lane's keep in the mask *)
+                            (byte i.buffer_data_i lane)       (* lane data *)
+                            (zero 8)                          (* zilch *)
+                      )
+      )
   in
+
+  (**)
   let body_count = Mac_10g_axis.keep_byte_count i.buffer_keep_i in
   let count_after_body = covered_count.value +: uresize body_count ~width:17 in
+
+  (* the name implies what it does *)
   let pad_needed =
     mux2
-      (count_after_body <:. 60)
+      (count_after_body <:. 60) (* inline comparator -> against a constant so . ; very cool functionality *)
       (of_int_trunc ~width:17 60 -: count_after_body)
       (zero 17)
   in
+
   let body_space = of_int_trunc ~width:4 8 -: body_count in
   let body_pad_count =
     mux2
@@ -184,6 +217,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let body_underflow = i.enable_i &: is_body &: ~:(i.buffer_valid_i) -- "underflow" in
   let frame_pulse = Always.Variable.wire ~default:gnd () in
   let frame_length_pulse = Always.Variable.wire ~default:(zero 17) () in
+
   let output_word =
     let body_word =
       mux2
@@ -194,6 +228,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
            i.buffer_data_i)
         Xgmii.error_word.data
     in
+
     let body_control =
       mux2
         i.buffer_valid_i
@@ -203,6 +238,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
            (zero 8))
         Xgmii.error_word.control
     in
+
     let wait_start = i.enable_i &: i.buffer_valid_i in
     { Xgmii.Word.data =
         mux
@@ -230,15 +266,22 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
           ]
     }
   in
+
+  (* Always assignment logic -> ive shifted around on whether or not to use the Always DSL,
+      but I think for "stateful" assignment reasons that it is completely necessary for more
+      complex control loops; something has to consume all the helper functions we create right?
+  *)
+
   Always.(
     compile
-      [ if_
-          ~:(i.enable_i)
-          [ state <--. state_wait
-          ; crc <-- Mac_10g_crc32.initial
-          ; covered_count <--. 0
-          ; ifg_words <--. 0
-          ]
+      [ if_ ~:(i.enable_i)
+        [ state           <--. state_wait (* this approach to state is a tad more debuggable,
+                                                but there are probably good reasons why State_machine
+                                              was written; we'll see. *)
+        ; crc             <-- Mac_10g_crc32.initial
+        ; covered_count   <--. 0
+        ; ifg_words       <--. 0
+        ]
           [ when_
               (is_wait &: i.buffer_valid_i)
               [ state <--. state_body
@@ -327,18 +370,20 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
               [ underflows <-- underflows.value +:. 1; underflow_sticky <--. 1 ]
           ]
       ]);
-  { O.buffer_ready_o = i.enable_i &: is_body
-  ; xgmii_txd_o = output_word.data
-  ; xgmii_txc_o = output_word.control
-  ; state_o = state.value
-  ; frame_pulse_o = frame_pulse.value
-  ; underflow_pulse_o = body_underflow
-  ; underflow_sticky_o = underflow_sticky.value
-  ; frames_o = frames.value
-  ; bytes_o = bytes.value
-  ; underflows_o = underflows.value
+
+  { O.
+    buffer_ready_o      = i.enable_i &: is_body
+  ; xgmii_txd_o         = output_word.data
+  ; xgmii_txc_o         = output_word.control
+  ; state_o             = state.value
+  ; frame_pulse_o       = frame_pulse.value
+  ; underflow_pulse_o   = body_underflow
+  ; underflow_sticky_o  = underflow_sticky.value
+  ; frames_o            = frames.value
+  ; bytes_o             = bytes.value
+  ; underflows_o        = underflows.value
   }
-;;
+[@@@ocamlformat "enable"]
 
 let hierarchical ?instance scope i =
   let module H = Hierarchy.In_scope (I) (O) in

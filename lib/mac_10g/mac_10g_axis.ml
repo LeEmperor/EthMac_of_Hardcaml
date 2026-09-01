@@ -18,15 +18,26 @@ module Beat = struct
   [@@deriving hardcaml]
 end
 
+(* from lanes 0 to anything is contiguous -> no holes, no leading gap *)
 let keep_is_contiguous keep =
-  List.range 1 9
+  List.range 1 9 (* generate a list of [1,9) *)
   |> List.map ~f:(fun byte_count -> keep ==:. (1 lsl byte_count) - 1)
-  |> reduce ~f:( |: )
+    (* plug each vlaue of [1,8] -> creates a cascading ladder of 1s from 0 to 8 -> all 1s
+       of a certain base max *)
+  |> reduce ~f:( |: ) (* OR-fold the entire thing *)
 ;;
 
+(* sizing is too small to matter here *)
+(* let keep_is_contiguous keep = *)
+(* let k = uresize keep ~width:9 in *)
+(* k &: k +:. 1 ==:. 0 &: (keep <>:. 0) *)
+(* ;; *)
+
 let keep_byte_count keep =
-  List.fold (bits_lsb keep) ~init:(zero 4) ~f:(fun count enabled ->
-    count +: uresize enabled ~width:4)
+  List.fold
+    (bits_lsb keep) (* list of 8 1b signals from a single 8b word *)
+    ~init:(zero 4) (* sign extend to 4b *)
+    ~f:(fun count enabled -> count +: uresize enabled ~width:4)
 ;;
 
 let keep_of_byte_count byte_count =
