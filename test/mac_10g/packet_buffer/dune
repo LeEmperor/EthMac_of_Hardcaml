@@ -1,0 +1,22 @@
+; University of Florida
+; Author: Bohdan Purtell
+; Transactional 10G packet-buffer verification.
+
+(library
+ (name mac_10g_packet_buffer_inline_tests)
+ (modules
+  packet_buffer_testbench
+  packet_buffer_unit_quickcheck_tests
+  packet_buffer_expect_tests
+  packet_buffer_hierarchy_tests)
+ ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries core hardcaml hardcaml_verif mac_10g_of_hardcaml)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

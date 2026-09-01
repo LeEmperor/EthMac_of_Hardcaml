@@ -84,11 +84,12 @@ module Make (Config : Config) = struct
     let free_bytes =
       of_int_trunc ~width:length_width Config.depth_bytes -: bytes_used.value
     in
-    let write_ready =
-      ~:(i.rollback_i) &: (write_count_ext <=: free_bytes) -- "write_ready"
-    in
+    let write_ready = write_count_ext <=: free_bytes -- "write_ready" in
     let write_accepted =
-      i.write_valid_i &: write_ready &: (write_count <>:. 0) -- "write_accepted"
+      i.write_valid_i
+      &: write_ready
+      &: ~:(i.rollback_i)
+      &: (write_count <>:. 0) -- "write_accepted"
     in
     let accepted_count = mux2 write_accepted write_count (zero 4) in
     let accepted_count_ext = uresize accepted_count ~width:length_width in
