@@ -20,11 +20,11 @@ module Word = struct
 end
 
 module Control_character = struct
-  let idle = 0x07
-  let start = 0xfb
-  let terminate = 0xfd
-  let error = 0xfe
-  let sequence_ordered_set = 0x9c
+  let idle = 0x07 (* /I *)
+  let start = 0xfb (* /S *)
+  let terminate = 0xfd (* /T *)
+  let error = 0xfe (* /E *)
+  let sequence_ordered_set = 0x9c (* /O *)
 end
 
 let check_lane lane =
