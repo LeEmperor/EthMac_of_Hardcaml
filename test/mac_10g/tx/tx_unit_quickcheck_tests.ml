@@ -67,6 +67,36 @@ let%test_unit "tuser, illegal keeps, and illegal lengths roll back whole frames"
   [%test_result: int] final.malformed ~expect:2
 ;;
 
+(* [max_supported_frame_length] is 255 here and the byte ring is 256 deep, so at most 251
+   frame bytes are ever stored. A frame that runs past that has to be rejected on the beat
+   that crosses the limit: deferring the check to the final beat lets the ring fill, and a
+   full ring holding an uncommitted frame stalls ingress until the frame ends, which the
+   testbench sees as a timeout rather than a drop. *)
+let%test_unit "over-length frames are rejected before they can fill the byte ring" =
+  let good = bytes 40 in
+  let observations = Testbench.run (Beat.of_frame (bytes 300) @ Beat.of_frame good) in
+  [%test_result: int list list]
+    (decode_frames observations)
+    ~expect:[ expected_wire_frame good ];
+  let final = List.last_exn observations in
+  [%test_result: int] final.frames ~expect:1;
+  [%test_result: int] final.drops ~expect:1;
+  [%test_result: int] final.malformed ~expect:1
+;;
+
+let%test_unit "the largest legal frame transmits and one byte more is dropped" =
+  let largest = bytes 251 in
+  [%test_result: int list list]
+    (decode_frames (Testbench.run (Beat.of_frame largest)))
+    ~expect:[ expected_wire_frame largest ];
+  let observations = Testbench.run (Beat.of_frame (bytes 252)) in
+  [%test_result: int list list] (decode_frames observations) ~expect:[];
+  let final = List.last_exn observations in
+  [%test_result: int] final.frames ~expect:0;
+  [%test_result: int] final.drops ~expect:1;
+  [%test_result: int] final.malformed ~expect:1
+;;
+
 let%test_unit "TX counter clear resets every owning-domain statistic and sticky event" =
   let final =
     Testbench.run ~clear_counters:true (Beat.of_frame (bytes 80)) |> List.last_exn
