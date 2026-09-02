@@ -39,60 +39,148 @@ module O = struct
   [@@deriving hardcaml]
 end
 
+(* states  - alwyas FSM exists for a reason but not a good one?? *)
 let state_wait = 0
 let state_body = 1
 let state_pad = 2
 let state_fcs = 3
 let state_ifg = 4
+
+(* and to think some poor soul would do this in SystemVerilog; it's me; I'm the poor soul *)
 let byte data lane = select data ~high:((8 * lane) + 7) ~low:(8 * lane)
 
-let fcs_byte fcs index =
-  mux (select index ~high:1 ~low:0) (List.init 4 ~f:(fun lane -> byte fcs lane))
+(* very surprised the formatter didn't shoot me in the head here lmao; i think its because of the @@@ attributes elsewhere but not too sure; *)
+(* goes unused in a few places - gets inlined hwere it should be used; might want to verify this individual function *)
+let fcs_byte = (fun (fcs : t) (index : t) ->
+    mux (select index ~high:1 ~low:0) (* verilog-style slice on index; grabs index[1:0] -> uses that as the mux select *)
+      (List.init 4 ~f:(fun lane -> byte fcs lane) (* forms 4 items, of which? *)
+    ) (* slices the fcs into 4 bytes -> fcs[7:0], fcs[15:8], fcs[23:16], fcs[31:24] = byte fcs 0, 1, 2, 3 *)
+) (* forms a byte mux *)
 ;;
 
-let terminal_word ~prefix_data ~prefix_count ~fcs =
-  let term_fits = prefix_count <=:. 3 in
-  let term_position = prefix_count +:. 4 in
-  let lane_values =
+(* can i close the frame in this word? *)
+let terminal_word
+    ~(prefix_data : t) (* 64b *) (* composes a partial data word, and its length*)
+    ~(prefix_count : t) (* 4b - how many lanes are real? *) (* with the fcs as well *)
+    ~(fcs : t) (* finished 32b fcs of whole frame *)
+  =
+
+  (* our budget is prefix_count + 4 (FCS) + 1 (/T) <= 8 *)
+  (* means we have 5 items that are tagged onto the end of a payload beat *)
+  let term_fits     = prefix_count <=:. 3 in (* prefix is payload items, check that we have at most 3 *)
+  let term_position = prefix_count +:.  4 in (* where is the term ending? it doesn't always end perfectly; may need revisiting later when we consider inter-frame leaving and not wasting IDLE things  *)
+
+  (* consider example final word:
+     P P P F F F F T
+     0 1 2 3 4 5 6 7
+
+    prefix = 3; we have (3) payload bytes that the word needs to finish off consuming
+    4 F(CS) bytes that are necessary to exist
+    1 T byte, which is for XGMII recognition of the end of a frame;
+  *)
+
+  (* each of these are the (data, control) pair -> we need to extract them at the end *)
+  let (lane_values : (t * t) list) = (* pair (tuple) list -> the word and it's control status *)
+
+    (* each lane, where lane is an integer in iteration *)
     List.init 8 ~f:(fun lane ->
-      let lane_signal = of_int_trunc ~width:4 lane in
-      let in_prefix = lane_signal <: prefix_count in
-      let fcs_offset = lane_signal -: prefix_count in
-      let in_fcs = lane_signal >=: prefix_count &: (fcs_offset <:. 4) in
-      let is_term = term_fits &: (term_position ==:. lane) in
-      let after_term = term_fits &: (term_position <:. lane) in
-      let data =
+
+      (* int arg of "fun lane" into signal representation *)
+      let (lane_signal : t)   = of_int_trunc ~width:4 lane in
+      (* forms [0; 1; 2; 3; 4; 5; 6; 7] as their Signal.t forms *)
+
+      (* does the lane hold real prefix data? (non fcs data) *)
+      let in_prefix     = lane_signal <: prefix_count in
+      (* for example: lane's 0, 1, 2 are all "in-prefix" -> [0, 1, 2] <: 3*)
+
+      (* where does the offset begin? *)
+      (* consider lane 3 of the example frame;
+          fcs_offset = 3 - 3 => 0
+
+        this technically wraps as it is subtraction; which is good for other comparators
+      *)
+      let fcs_offset    = lane_signal -: prefix_count in
+
+      (* lane 3:
+        3 >= 3 : true
+          fcs_offset = (3 -: 3) = 0
+          0 <:. 4 : true
+
+        true AND true => in_fcs = true
+
+        lane 2:
+          2 >= 3 : false -> wholly evaluates to false, correct as we're in payload in this case
+      *)
+      let in_fcs        = lane_signal >=: prefix_count &: (fcs_offset <:. 4) in
+
+      (* is the lane we're looking at specifically the TERM? *)
+      let is_term       = term_fits &: (term_position ==:. lane) in
+
+      (* are we after the term? probably easier to read other way around *)
+      let after_term    = term_fits &: (term_position <:. lane) in
+      (* let after_term    = term_fits &: (lane >:. term_position) in *) (* for some reason this isn't valid *)
+
+      (* one of my worst chain muxes ever I fear *)
+      let data          =
         mux2
-          in_prefix
-          (byte prefix_data lane)
-          (mux2
-             in_fcs
-             (fcs_byte fcs fcs_offset)
+          in_prefix (* is the data payload data? *)
+          (byte prefix_data lane) (* yes : grab the byte out of the prefix_data (which is not specifically a single byte, in example is 3 bytes of taste) *)
+          (mux2 (* no : need to select between FCS (and which part of FCS), as well as /T and /I *)
+            in_fcs (* are we in the fcs? *)
+
+            (* yes *)
+             (mux (select fcs_offset ~high:1 ~low:0) (* slice fcs_offset[1:0] *)
+                (List.init 4 ~f:(fun lane -> byte fcs lane)) (* select into bytes of the 4B fcs *)
+             )
+
+            (* no *)
              (mux2
-                is_term
-                (of_int_trunc ~width:8 Xgmii.Control_character.terminate)
-                (of_int_trunc ~width:8 Xgmii.Control_character.idle)))
+                is_term (* is it a term? *)
+
+                (* yes *)
+                (of_int_trunc ~width:8 Xgmii.Control_character.terminate) (* /T *)
+
+                (* no - works off the assumption that in_fcs isn't high for something that should be an idle character *)
+                (of_int_trunc ~width:8 Xgmii.Control_character.idle))) (* /I *)
       in
+
       data, is_term |: after_term)
   in
-  ( { Xgmii.Word.data = concat_lsb (List.map lane_values ~f:fst)
-    ; control = concat_lsb (List.map lane_values ~f:snd)
+
+  (* the resulting data-control pair, with the term-fits booln to follow it - aka only use this if the term actually fits *)
+  ( { Xgmii.Word.data   = concat_lsb (List.map lane_values ~f:fst) (* first *) (* form together the "data" into a scalar *)
+    ; control           = concat_lsb (List.map lane_values ~f:snd) (* second *) (* form together the "control" into a scalar *)
     }
-  , term_fits )
+  , term_fits (* does the term fit? - timing might be a problem here *)
+  )
 ;;
 
+(**)
 let fcs_word ~fcs ~index =
+
   let remaining = of_int_trunc ~width:4 4 -: uresize index ~width:4 in
+
+  (* same lane_values idiom as earlier *)
   let lane_values =
     List.init 8 ~f:(fun lane ->
       let lane_signal = of_int_trunc ~width:4 lane in
       let in_fcs = lane_signal <: remaining in
       let is_term = lane_signal ==: remaining in
+
+      (* *)
       let source_index = uresize index ~width:4 +: lane_signal in
+
+      (* mux tree! *)
       let data =
         mux2
-          in_fcs
-          (fcs_byte fcs source_index)
+          in_fcs (* in fcs? *)
+
+          (* yes *)
+          (mux (select source_index ~high:1 ~low:0)
+             (List.init 4 ~f:(fun lane -> byte fcs lane))
+          )
+
+          (* no *)
           (mux2
              is_term
              (of_int_trunc ~width:8 Xgmii.Control_character.terminate)
@@ -101,7 +189,7 @@ let fcs_word ~fcs ~index =
       data, ~:in_fcs)
   in
   { Xgmii.Word.data = concat_lsb (List.map lane_values ~f:fst)
-  ; control = concat_lsb (List.map lane_values ~f:snd)
+  ; control         = concat_lsb (List.map lane_values ~f:snd)
   }
 ;;
 
