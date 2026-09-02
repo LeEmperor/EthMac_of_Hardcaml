@@ -2,7 +2,8 @@
 (* Author: Bohdan Purtell *)
 (* Module: "mac_10g_tx.ml" *)
 (* Functional lane-0 10G XGMII transmitter with padding, FCS, termination, and a
-   conservative interpacket gap. *)
+   conservative interpacket gap.
+*)
 
 open! Core
 open! Hardcaml
@@ -467,7 +468,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
       (* is the remaining amount of padding required less-eq than 8? *)
       (pad_remaining <=:. 8)
 
-      (* yes - grab the remaining pad amount raw *)
+      (* yes - grab the remaining pad amount raw -> *)
       (select pad_remaining ~high:3 ~low:0)
 
       (* no set the pad count to 8 *)
@@ -492,12 +493,19 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* this is the final word, and this is if the terminal word is good or not *)
   let pad_terminal_word, pad_term_fits =
     terminal_word
-      ~prefix_data:(zero 64)
-      ~prefix_count:pad_count
-      ~fcs:pad_final_fcs
+      ~prefix_data:(zero 64) (* the data for a padded terminal word is 0 *)
+      ~prefix_count:pad_count (* the prefix is how much of the prefix_data is valid *)
+      ~fcs:pad_final_fcs (* the fcs that we attached *)
   in
 
-  let stored_fcs_word = fcs_word ~fcs:stored_fcs.value ~index:fcs_index.value in
+  (* application of fcs_word *)
+  let stored_fcs_word =
+    fcs_word
+      ~fcs:stored_fcs.value
+      ~index:fcs_index.value
+  in
+
+  (* underflow protector *)
   let body_underflow = i.enable_i &:
                        is_body &:
                        ~:(i.buffer_valid_i)
@@ -506,53 +514,98 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   let frame_pulse = Always.Variable.wire ~default:gnd () in
   let frame_length_pulse = Always.Variable.wire ~default:(zero 17) () in
 
-  let output_word =
+  (* outputs an XGMII Word.t *)
+  let (output_word : t Xgmii.Word.t) =
+
+    (* form together the word to be emitted out of the XGMII interface *)
     let body_word =
       mux2
+        (*is the buffer word valid? *)
         i.buffer_valid_i
+
+        (* yes -> chain into following *)
         (mux2
+          (* is this the last_word? *)
            i.buffer_last_i
-           (mux2 body_padding_complete body_terminal_word.data masked_body_data)
-           i.buffer_data_i)
+
+           (* yes -> chain into following *)
+           (mux2
+              (* is the remaining owed padding available to be shoved into this body beat? *)
+              body_padding_complete
+
+              (* yes - pass the terminal word; we could indeed fit everything in nice and dandy *)
+              body_terminal_word.data
+
+              (* no -> pass the body data; remaining padding will be handled elsewhere *)
+              masked_body_data
+           )
+
+           (* no -> pass the normal body data *)
+           i.buffer_data_i
+        )
+
+        (* no - fill an error word *)
         Xgmii.error_word.data
     in
 
     let body_control =
       mux2
+        (* is the word valid coming from the buffer? *)
         i.buffer_valid_i
+
+        (* yes -> chain *)
         (mux2
-           (i.buffer_last_i &: body_padding_complete)
+           (* is the word hte last && can the entire owed padding be fit in this body beat? *)
+           (i.buffer_last_i &:
+            body_padding_complete)
+
+          (* yes - pass the control word that the terminal word cell held *)
            body_terminal_word.control
-           (zero 8))
+
+          (* no - zero out*)
+           (zero 8)
+        )
+
+        (* no -> pass the control mask that aligns with shooting error words *)
         Xgmii.error_word.control
     in
 
-    let wait_start = i.enable_i &: i.buffer_valid_i in
-    { Xgmii.Word.data =
-        mux
-          state.value
-          [ mux2 wait_start start_word.data Xgmii.idle_word.data
-          ; body_word
-          ; mux2 (pad_remaining <=:. 8) pad_terminal_word.data (zero 64)
-          ; stored_fcs_word.data
-          ; Xgmii.idle_word.data
-          ; Xgmii.idle_word.data
-          ; Xgmii.idle_word.data
-          ; Xgmii.idle_word.data
-          ]
-    ; control =
-        mux
-          state.value
-          [ mux2 wait_start start_word.control Xgmii.idle_word.control
-          ; body_control
-          ; mux2 (pad_remaining <=:. 8) pad_terminal_word.control (zero 8)
-          ; stored_fcs_word.control
-          ; Xgmii.idle_word.control
-          ; Xgmii.idle_word.control
-          ; Xgmii.idle_word.control
-          ; Xgmii.idle_word.control
-          ]
-    }
+    let wait_start =
+      i.enable_i &:
+      i.buffer_valid_i
+    in
+        { Xgmii.Word.data =
+            mux
+              (* based on which state we're in -> somewhat hard to reason about;
+                 potentially might be a string-enum based way for more explicitness
+                *)
+            state.value
+            [ mux2
+                wait_start
+                start_word.data
+                Xgmii.idle_word.data
+
+            ; body_word
+            ; mux2 (pad_remaining <=:. 8) pad_terminal_word.data (zero 64)
+            ; stored_fcs_word.data
+            ; Xgmii.idle_word.data (* fill remaining data *)
+            ; Xgmii.idle_word.data
+            ; Xgmii.idle_word.data
+            ; Xgmii.idle_word.data
+            ]
+        ; control =
+            mux
+            state.value
+            [ mux2 wait_start start_word.control Xgmii.idle_word.control
+            ; body_control
+            ; mux2 (pad_remaining <=:. 8) pad_terminal_word.control (zero 8)
+            ; stored_fcs_word.control
+            ; Xgmii.idle_word.control (* fill remaining control *)
+            ; Xgmii.idle_word.control
+            ; Xgmii.idle_word.control
+            ; Xgmii.idle_word.control
+            ]
+        }
   in
 
   (* Always assignment logic -> ive shifted around on whether or not to use the Always DSL,
@@ -562,7 +615,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
 
   Always.(
     compile
-      [ if_ ~:(i.enable_i)
+      [ if_ ~:(i.enable_i) (* goto a disable -> might axe this for logic level reasons *)
         [ state           <--. state_wait (* this approach to state is a tad more debuggable,
                                                 but there are probably good reasons why State_machine
                                               was written; we'll see. *)
@@ -570,7 +623,7 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
         ; covered_count   <--. 0
         ; ifg_words       <--. 0
         ]
-          [ when_
+          [ when_ (* initial word blast from buffer; this is the transition definition from wait to actual payload *)
               (is_wait &: i.buffer_valid_i)
               [ state <--. state_body
               ; crc <-- Mac_10g_crc32.initial
@@ -578,24 +631,27 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
               ]
           ; when_
               is_body
-              [ if_
-                  ~:(i.buffer_valid_i)
-                  [ state <--. state_ifg; ifg_words <--. 2 ]
-                  [ crc <-- body_next_crc
+              [ if_ ~:(i.buffer_valid_i) (* if the next buffer beat is invalid, *)
+                  [ state <--. state_ifg; ifg_words <--. 2 ] (* IFG time *)
+                  [ crc <-- body_next_crc (* else, declare CRCs, and set next covered_count reg *)
                   ; covered_count
                     <-- covered_count.value +: uresize body_crc_count ~width:17
-                  ; when_
+                  ; when_ (* if this is the last beat from the buffer for that "packet" *)
                       i.buffer_last_i
                       [ if_
-                          ~:body_padding_complete
+                          ~:body_padding_complete (* spare padding state transition *)
                           [ state <--. state_pad ]
-                          [ if_
+                          [ if_ (* the body padding is complete, does it fit? *)
+
+                              (* yes *)
                               body_term_fits
                               [ state <--. state_ifg
                               ; ifg_words <--. 2
                               ; frame_pulse <-- vdd
                               ; frame_length_pulse <-- body_completed_length
                               ]
+
+                              (* no *)
                               [ state <--. state_fcs
                               ; stored_fcs <-- body_final_fcs
                               ; fcs_index
@@ -609,44 +665,50 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
                   ]
               ]
           ; when_
-              is_pad
-              [ crc <-- pad_next_crc
+              is_pad (* pad state *)
+              [ crc <-- pad_next_crc (* assign the crc *)
+              (* the padded amount becomes the next covered amount; we only pad so much, and
+                therefore only cover so much (some 0s aren't "covered") *)
               ; covered_count <-- covered_count.value +: uresize pad_count ~width:17
               ; if_
-                  (pad_remaining <=:. 8)
+                  (pad_remaining <=:. 8) (* pad remaining can possibly fit in the final word *)
                   [ if_
-                      pad_term_fits
-                      [ state <--. state_ifg
+                      pad_term_fits (* does the pad term fit in the final word beat? *)
+                      [ state <--. state_ifg (* yes - goto end *)
                       ; ifg_words <--. 2
                       ; frame_pulse <-- vdd
                       ; frame_length_pulse <--. 64
                       ]
-                      [ state <--. state_fcs
+
+                      [ state <--. state_fcs (* no - goto FCS *)
                       ; stored_fcs <-- pad_final_fcs
                       ; fcs_index
                         <-- uresize (of_int_trunc ~width:4 8 -: pad_count) ~width:3
                       ; pending_frame_length <--. 64
                       ]
                   ]
+
+                  (* no - move to the explicit pad state so that we can get
+                      pad_remaining down some amount *)
                   [ state <--. state_pad ]
               ]
           ; when_
-              is_fcs
-              [ state <--. state_ifg
+              is_fcs (* fcs state *)
+              [ state <--. state_ifg (* finish out *)
               ; ifg_words <--. 2
-              ; frame_pulse <-- vdd
-              ; frame_length_pulse <-- pending_frame_length.value
+              ; frame_pulse <-- vdd (* frame_pulse not just yet *)
+              ; frame_length_pulse <-- pending_frame_length.value (* we're almost there *)
               ]
           ; when_
-              is_ifg
+              is_ifg (* interframe-gap state *)
               [ if_
-                  (ifg_words.value <=:. 1)
+                  (ifg_words.value <=:. 1) (* *)
                   [ state <--. state_wait; ifg_words <--. 0 ]
                   [ ifg_words <-- ifg_words.value -:. 1 ]
               ]
           ]
       ; if_
-          i.counters_clear_i
+          i.counters_clear_i (* extra evaluation for mmap'd items on the counters *)
           [ frames <--. 0; bytes <--. 0; underflows <--. 0; underflow_sticky <--. 0 ]
           [ when_
               frame_pulse.value
