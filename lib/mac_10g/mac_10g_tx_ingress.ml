@@ -77,26 +77,36 @@ module Make (Config : Config) = struct
       >=:. 14
       &: (frame_length_after_beat <=:. Config.max_supported_frame_length - 4)
     in
-    let final_rejected = i.axis_last_i &: (i.axis_user_i |: ~:length_legal) in
-    let reject_current = ~:keep_legal |: final_rejected in
-    let ready =
-      i.enable_i
-      &: ~:(pending_commit.value)
-      &: mux2 (dropping.value |: reject_current) vdd i.buffer_write_ready_i
-         -- "axis_ready"
+    (* The packet buffer has no maximum-frame guard of its own, so an over-length frame
+       has to be rejected on the beat that crosses the limit, not at [axis_last_i].
+       Deferring it lets a frame fill the byte ring, and a full ring holding an
+       uncommitted frame stalls the whole TX path until that frame finally ends. The
+       short-frame half of [length_legal] stays on the final beat, which is the only place
+       it means anything. *)
+    let over_length =
+      (frame_length_after_beat >:. Config.max_supported_frame_length - 4) -- "over_length"
     in
-    let accepted = i.axis_valid_i &: ready -- "axis_accepted" in
+    let final_rejected = i.axis_last_i &: (i.axis_user_i |: ~:length_legal) in
+    let reject_current = ~:keep_legal |: over_length |: final_rejected in
+    let ready =
+      (i.enable_i
+       &: ~:(pending_commit.value)
+       &: mux2 (dropping.value |: reject_current) vdd i.buffer_write_ready_i)
+      -- "axis_ready"
+    in
+    let accepted = (i.axis_valid_i &: ready) -- "axis_accepted" in
     let accepted_reject = accepted &: reject_current in
     let accepted_good = accepted &: ~:(dropping.value) &: ~:reject_current in
     let commit_request = accepted_good &: i.axis_last_i in
-    let commit = pending_commit.value |: commit_request -- "buffer_commit" in
-    let rollback = accepted_reject &: ~:(dropping.value) -- "buffer_rollback" in
+    let commit = (pending_commit.value |: commit_request) -- "buffer_commit" in
+    let rollback = (accepted_reject &: ~:(dropping.value)) -- "buffer_rollback" in
     let completed_drop =
-      accepted &: i.axis_last_i &: (dropping.value |: reject_current) -- "completed_drop"
+      (accepted &: i.axis_last_i &: (dropping.value |: reject_current))
+      -- "completed_drop"
     in
     let completed_malformed =
-      completed_drop
-      &: (malformed.value |: ~:keep_legal |: ~:length_legal) -- "completed_malformed"
+      (completed_drop &: (malformed.value |: ~:keep_legal |: ~:length_legal))
+      -- "completed_malformed"
     in
     Always.(
       compile

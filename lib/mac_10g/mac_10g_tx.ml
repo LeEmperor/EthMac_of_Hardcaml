@@ -506,9 +506,9 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   in
 
   (* underflow protector *)
-  let body_underflow = i.enable_i &:
-                       is_body &:
-                       ~:(i.buffer_valid_i)
+  let body_underflow = (i.enable_i &:
+                        is_body &:
+                        ~:(i.buffer_valid_i))
                        -- "underflow" in
 
   let frame_pulse = Always.Variable.wire ~default:gnd () in

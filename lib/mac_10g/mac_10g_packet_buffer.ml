@@ -2,8 +2,11 @@
 (* Author: Bohdan Purtell *)
 (* Module: "mac_10g_packet_buffer.ml" *)
 (* Transactional packet byte ring with speculative writes, commit/rollback, a descriptor
-   FIFO, and a stall-stable 64-bit read interface. The byte store is split into eight
-   banks so one AXI beat can be written and read per cycle without a multi-write-port RAM. *)
+   FIFO, and a stall-stable 64-bit read interface.
+
+   The byte store is split into eight banks so one AXI beat can be written and read per
+   cycle without a multi-write-port RAM.
+*)
 
 open! Core
 open! Hardcaml
@@ -29,8 +32,13 @@ module Make (Config : Config) = struct
     then invalid_arg "Mac_10g_packet_buffer: error_width must be positive"
   ;;
 
+  (* address based on depth -> standard parameterization *)
   let address_width = Int.ceil_log2 Config.depth_bytes
+
+  (* *)
   let bank_address_width = address_width - 3
+
+  (* where was num_bits_to_represent all my life? *)
   let length_width = num_bits_to_represent Config.depth_bytes
   let descriptor_address_width = Int.ceil_log2 Config.descriptor_capacity
   let descriptor_count_width = num_bits_to_represent Config.descriptor_capacity
@@ -66,38 +74,82 @@ module Make (Config : Config) = struct
     [@@deriving hardcaml]
   end
 
+  [@@@ocamlformat "disable"]
+
   let create (scope : Scope.t) (i : _ I.t) : _ O.t =
-    let ( -- ) = Scope.naming scope in
+
+    (* spec *)
     let spec = Reg_spec.create ~clock:i.clock_i ~clear:i.reset_i () in
-    let reg_var width = Always.Variable.reg ~enable:vdd ~width spec in
-    let speculative_pointer = reg_var address_width in
-    let committed_write_pointer = reg_var address_width in
-    let read_pointer = reg_var address_width in
-    let speculative_length = reg_var length_width in
-    let bytes_used = reg_var length_width in
-    let descriptor_write_pointer = reg_var descriptor_address_width in
-    let descriptor_read_pointer = reg_var descriptor_address_width in
-    let descriptors_used = reg_var descriptor_count_width in
-    let read_offset = reg_var length_width in
+
+    (* helpers *)
+    let ( -- ) = Scope.naming scope in
+    let reg_var width       = Always.Variable.reg ~enable:vdd ~width spec in
+
+    (* if i want internal tagging on these then the I_Wires and I_Regs idiom might be better *)
+    let speculative_pointer       = reg_var address_width in
+    let committed_write_pointer   = reg_var address_width in
+    let read_pointer              = reg_var address_width in
+
+    (* bytes in the in-flight frame *)
+    let speculative_length        = reg_var length_width in
+
+    (* total occupancy counter *)
+    let bytes_used                = reg_var length_width in
+
+    (* how far into the current descriptor we've gotten *)
+    let descriptor_write_pointer  = reg_var descriptor_address_width in
+    let descriptor_read_pointer   = reg_var descriptor_address_width in
+    let descriptors_used          = reg_var descriptor_count_width in
+    let read_offset               = reg_var length_width in
+
+    (* of the write thats going into the buffer, how many bytes are being kept?
+       turn the keep mask into an int -> popcount(write_keep_i) *)
     let write_count = Mac_10g_axis.keep_byte_count i.write_keep_i in
+
+    (* extend into the length param's width *)
     let write_count_ext = uresize write_count ~width:length_width in
+
+    (* consider the example 16 depth, with 64b per entry *)
+    (* for example with *)
     let free_bytes =
-      of_int_trunc ~width:length_width Config.depth_bytes -: bytes_used.value
+      of_int_trunc ~width:length_width Config.depth_bytes -:
+      bytes_used.value
     in
-    let write_ready = write_count_ext <=: free_bytes -- "write_ready" in
+
+    (* as long as the write count amount is less than the free storage,
+      we are "ready" to accept *)
+    let write_ready = (write_count_ext <=: free_bytes) -- "write_ready" in
+
+    (* helper for the transaction interface *)
     let write_accepted =
-      i.write_valid_i
-      &: write_ready
-      &: ~:(i.rollback_i)
-      &: (write_count <>:. 0) -- "write_accepted"
+      (i.write_valid_i (* valid *)
+      &: write_ready (* ready *)
+      &: ~:(i.rollback_i) (* not rolling back on this beat *)
+      &: (write_count <>:. 0)) -- "write_accepted" (*bruh*)
     in
-    let accepted_count = mux2 write_accepted write_count (zero 4) in
+
+    (* self explanatory-ish *)
+    let accepted_count =
+      mux2
+        (* is the write accepted? *)
+        write_accepted
+
+        (* yes - the count is the write_count *)
+        write_count
+
+        (* else zero *)
+        (zero 4)
+    in
+
+    (* zero-pad *)
     let accepted_count_ext = uresize accepted_count ~width:length_width in
+
+    (* what the end will be upon a commit? *)
     let speculative_end =
-      speculative_pointer.value +: uresize accepted_count ~width:address_width
+      speculative_pointer.value +: (uresize accepted_count ~width:address_width)
     in
-    let length_after_write = speculative_length.value +: accepted_count_ext in
-    let descriptor_write_enable = wire 1 in
+    let length_after_write = speculative_length.value +: accepted_count_ext in (* extra speculative items *)
+    let descriptor_write_enable = Signal.wire 1 in
     let descriptor_length =
       (multiport_memory
          ~name:"descriptor_length"
@@ -248,7 +300,8 @@ module Make (Config : Config) = struct
     ; bytes_used_o = bytes_used.value
     ; descriptors_used_o = descriptors_used.value
     }
-  ;;
+
+  [@@@ocamlformat "enable"]
 
   let hierarchical ?instance scope i =
     let module H = Hierarchy.In_scope (I) (O) in
