@@ -269,6 +269,19 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
 
   (* combo assignment on the body data and whether or not the keep lane corresponds with it;
     one may consider moving this to a common function library?
+
+    for
+      0 0 0 1 1 1 1 1
+
+      the masked_body_data =
+        8*{0} @:
+        8*{0} @:
+        8*{0} @:
+        buffer_data_i[39:32] @:
+        buffer_data_i[31:24] @:
+        buffer_data_i[23:16] @:
+        buffer_data_i[15:8] @:
+        buffer_data_i[7:0] @:
   *)
   let masked_body_data =
     concat_lsb (* concat fold entire list *)
@@ -289,13 +302,23 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
   (* no protection against, non-contiguous keep groups; *)
   (* "popcount", number of 1s in the buffer_keep_i mask *)
   (* gives us the size of the "body" of bytes that we're committing in this XGMII beat *)
+  (* for [0 0 0 1 1 1 1 1 ], body_count = 5 *)
+  (* = popcount(keep) *)
   let body_count = Mac_10g_axis.keep_byte_count i.buffer_keep_i in
 
   (* running CRC-covered body count; "once this body word is accepted, how many frame bytes WILL
     be covered" *)
+  (* covered_count is the main stateful item that we need to keep track of between cycles *)
   let count_after_body = covered_count.value +: (uresize body_count ~width:17) in
+  (* consider where covered_count is 0 - the initial buffer beat,
+      after cosnider where it is 8 - we've churned through some initial addressing items
+
+      therefore, count_after_body, assuming another good 64b full-kept beat, forms a 16
+      for this function
+  *)
 
   (* the name implies what it does; or does it? *)
+  (* consider on a full beat that isn't the START_WORD -> DA[5:0], SA[1:0] *)
   let pad_needed =
     mux2
       (* is count after covering the new body <= 60? *)
@@ -308,14 +331,33 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
       (zero 17)
   in
 
-  (* *)
-  let body_space = of_int_trunc ~width:4 8 -: body_count in
+  (* 4b, starts at 8; difference between 8 and body size
+    we have 8B of space; how many are left taking into account the buffer_keep_i popcount?
+
+  for example with keep mask of
+      0 0 0 1 1 1 1 1 -> popcount is 5
+      means that IF we do need to pad, then we have (8) - (popcount = 5) = 3 bytes to pad
+  *)
+  (* howmany pad bytes could be added without spilling *)
+  let (body_space : t) = (of_int_trunc ~width:4 8) -: body_count in
+
+  (* min(pad_needed, body_space) *)
+  (* if we need to pad,   *)
   let body_pad_count =
     mux2
+      (* is the pad less than a certain size? *)
+      (* in the example, we consider 0 and 8
+          0: pad_needed ->
+      *)
       (pad_needed <=: uresize body_space ~width:17)
+
+      (* yes - pad_needed[3:0] *)
       (select pad_needed ~high:3 ~low:0)
+
+      (* no - *)
       body_space
   in
+
   let body_prefix_count = body_count +: body_pad_count in
   let body_crc_count = mux2 i.buffer_last_i body_prefix_count body_count in
   let body_crc_mask = Mac_10g_axis.keep_of_byte_count body_crc_count in
