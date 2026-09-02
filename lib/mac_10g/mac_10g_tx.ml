@@ -319,13 +319,17 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
 
   (* the name implies what it does; or does it? *)
   (* consider on a full beat that isn't the START_WORD -> DA[5:0], SA[1:0] *)
-  let pad_needed =
+  let (pad_needed : t) =
     mux2
       (* is count after covering the new body <= 60? *)
       (count_after_body <:. 60) (* inline comparator -> against a constant so . ; very cool functionality *)
 
       (* yes - pad amount required is the difference of 60 an the count *)
       (of_int_trunc ~width:17 60 -: count_after_body)
+      (* lets say we have covered 16 items, and we have another
+         5 payload items to finish out the buffer, therefore count_after_body is 21
+        60 - 21 = 39 -> need 39 zeros to pad, with a final beat body_count of 5
+      *)
 
       (* no - zero *)
       (zero 17)
@@ -338,58 +342,167 @@ let create (scope : Scope.t) (i : _ I.t) : _ O.t =
       0 0 0 1 1 1 1 1 -> popcount is 5
       means that IF we do need to pad, then we have (8) - (popcount = 5) = 3 bytes to pad
   *)
-  (* howmany pad bytes could be added without spilling *)
+  (* body count tells us how many bytes we have in the beat *)
+  (* how many pad bytes could be added without spilling *)
   let (body_space : t) = (of_int_trunc ~width:4 8) -: body_count in
 
+  (* can ALL the padding this frame still owes fit in this beat's empty lanes?
+     drives the pad-count mux below AND the "can we terminate here" decisions further down,
+     so it is defined once here rather than recomputed at each use
+
+    example: we owe 39 bytes of padding, and we have 3 bytes left in a given body word to push
+    therefore 39 <= 3 is NOT true, because we cannot fit all the owed padding into the
+    remaining body_space
+   *)
+  let body_padding_complete = pad_needed <=: uresize body_space ~width:17 in
+
   (* min(pad_needed, body_space) *)
-  (* if we need to pad,   *)
-  let body_pad_count =
+  (* why do we need this?
+      body_space = how many bytes in the 64b beat are empty? (3) for example
+      pad_needed = how many bytes in total we need to pad the frame itself with. (39) for example
+  *)
+  (* if we need to pad,  then what?  *)
+  let body_pad_count = (* how many zero'd bytes are in the frame we're going to write *)
+    (* in the example where we need 39 bytes of zeroing, and we have (3) bytes left in the 64b word to push
+
+     *)
     mux2
       (* is the pad less than a certain size? *)
       (* in the example, we consider 0 and 8
           0: pad_needed ->
-      *)
-      (pad_needed <=: uresize body_space ~width:17)
 
-      (* yes - pad_needed[3:0] *)
+        consider [0 0 0 1 1 1 1 1] => body_count = 5, 5/8 bytes are being used
+        body_space = 8 - 5 = 3
+
+        pad_needed for this was (from previous cover_count = 16) (60 - 21 = 39)
+
+        39 <=: 3? no. take the body_space (3) => becuase that means we're using all
+        the remaining space in this beat to "pad"
+      *)
+      body_padding_complete
+
+      (* yes - pad_needed[3:0] -> see how much padding we need to use *)
       (select pad_needed ~high:3 ~low:0)
 
       (* no - *)
-      body_space
+      body_space (* in the example, this is 3 *)
   in
 
+  (*  body_count = 5
+      body_pad_count = 3
+      = 8
+  *)
+  (* NB: body_pad_count / body_prefix_count are computed on EVERY body beat but are only
+     meaningful on the last one - a mid-frame beat has no padding owed to it yet. every
+     consumer is gated on buffer_last_i, either through the body_crc_count mux right below
+     or through the `when_ i.buffer_last_i` arm in the FSM.
+  *)
+  (* number of bytes present in the buffer feed word, plus the number of bytes in the next
+      body that are to be used for padding of the next body beat
+
+    how many of the bytes in the body are actual payload/padding, vs FCS
+
+    this tells us where the FCS starts
+  *)
   let body_prefix_count = body_count +: body_pad_count in
-  let body_crc_count = mux2 i.buffer_last_i body_prefix_count body_count in
+                (* real bytes *) (* zeros we promoted to real bytes *)
+
+  (* how many of the word's bytes count as "frame" bytes*)
+  let body_crc_count =
+    mux2
+      (* is the beat from the buffer the last beat? *)
+      i.buffer_last_i
+
+      (* yes - *)
+      body_prefix_count
+
+      (* no - *)
+      body_count
+  in
+
+  (* form the keep mask of the number of bytes in the body of the crc count *)
+  (* forms the mask for the body data that we're passing through the CRC mechanism
+        the "body" is composed of data + potential padding, the padding being 0s that
+        we've promoted to real data, but now must also factor into the FCS
+  *)
   let body_crc_mask = Mac_10g_axis.keep_of_byte_count body_crc_count in
+
+  (* if a given lane's mask bit (whether or not we need to factor it in FCS) is 1, then use it*)
   let body_next_crc =
     Mac_10g_crc32.update crc.value ~data:masked_body_data ~valid_bytes:body_crc_mask
   in
+
   let body_final_fcs = Mac_10g_crc32.fcs body_next_crc in
-  let body_padding_complete = pad_needed <=: uresize body_space ~width:17 in
+
+  (* structured bindings coolio *)
+  (* can i close the frame in this word? this is the used call *)
   let body_terminal_word, body_term_fits =
     terminal_word
       ~prefix_data:masked_body_data
       ~prefix_count:body_prefix_count
       ~fcs:body_final_fcs
   in
+
+  (* committed body, how much padding was needed, and the constant 4
+     we want to see if this is 64
+
+    used for a stat counter
+    *)
   let body_completed_length = count_after_body +: pad_needed +:. 4 in
-  let pad_remaining = of_int_trunc ~width:17 60 -: covered_count.value in
+
+  (* lets say we have 16 covered bytes from the previous 2 words,
+  and we're committing another nice 64b payload (with keep=0xFF)
+  this means the next covered_count computed is 24;
+  pad_remaining keeps track of the amount of padding we'd require
+  assuming said beat IS the last beat of the payload from the buffer.
+
+  not necessarily used, but kept as a unconditonally computed difference
+  between covered_count and 60 for how many zero'd bytes we'll need to use.
+  *)
+  let pad_remaining = (of_int_trunc ~width:17 60) -: covered_count.value in
+
+  (* min(8, pad_remaining) *)
   let pad_count =
     mux2
+      (* is the remaining amount of padding required less-eq than 8? *)
       (pad_remaining <=:. 8)
+
+      (* yes - grab the remaining pad amount raw *)
       (select pad_remaining ~high:3 ~low:0)
+
+      (* no set the pad count to 8 *)
       (of_int_trunc ~width:4 8)
   in
-  let pad_mask = Mac_10g_axis.keep_of_byte_count pad_count in
-  let pad_next_crc =
+
+  (* the keep maks to go with the pad_count bytes
+     if we need 39 bytes of padding, thats 6 bits of keep in the mask
+     which is 0011_1111 generated out of that
+   *)
+  let (pad_mask : t) = Mac_10g_axis.keep_of_byte_count pad_count in
+
+  (* take the current crc value, and feed it with the zero'd out word;
+    which parts of that word are valid is determined by the pad_mask *)
+  let (pad_next_crc : t) =
     Mac_10g_crc32.update crc.value ~data:(zero 64) ~valid_bytes:pad_mask
   in
+
+  (* calculate fcs at the very end *)
   let pad_final_fcs = Mac_10g_crc32.fcs pad_next_crc in
+
+  (* this is the final word, and this is if the terminal word is good or not *)
   let pad_terminal_word, pad_term_fits =
-    terminal_word ~prefix_data:(zero 64) ~prefix_count:pad_count ~fcs:pad_final_fcs
+    terminal_word
+      ~prefix_data:(zero 64)
+      ~prefix_count:pad_count
+      ~fcs:pad_final_fcs
   in
+
   let stored_fcs_word = fcs_word ~fcs:stored_fcs.value ~index:fcs_index.value in
-  let body_underflow = i.enable_i &: is_body &: ~:(i.buffer_valid_i) -- "underflow" in
+  let body_underflow = i.enable_i &:
+                       is_body &:
+                       ~:(i.buffer_valid_i)
+                       -- "underflow" in
+
   let frame_pulse = Always.Variable.wire ~default:gnd () in
   let frame_length_pulse = Always.Variable.wire ~default:(zero 17) () in
 

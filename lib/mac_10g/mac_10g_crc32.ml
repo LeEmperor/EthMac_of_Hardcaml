@@ -24,23 +24,44 @@ let update_bit crc input_bit =
 
 (* fold for entire bit list *)
 let update_byte crc byte = List.fold (bits_lsb byte) ~init:crc ~f:update_bit
-
 (* generalized function across bytes *)
+
+[@@@ocamlformat "disable"]
+(* takes in the current crc, the data, and the valid mask, and computes the next crc *)
 let update crc ~data ~valid_bytes =
+
+  (* checks *)
   if width crc <> 32
   then invalid_argf "Mac_10g_crc32.update: CRC width is %d, expected 32" (width crc) ();
+
   if width data <> 64
   then invalid_argf "Mac_10g_crc32.update: data width is %d, expected 64" (width data) ();
+
   if width valid_bytes <> 8
   then
     invalid_argf
       "Mac_10g_crc32.update: valid-byte mask width is %d, expected 8"
       (width valid_bytes)
       ();
-  List.fold (List.range 0 8) ~init:crc ~f:(fun crc lane ->
-    let byte = select data ~high:((8 * lane) + 7) ~low:(8 * lane) in
-    mux2 (bit valid_bytes ~pos:lane) (update_byte crc byte) crc)
-;;
+
+  List.fold (List.range 0 8) (* 8 lanes; start the fold with the current crc; *)
+    ~init:crc ~f:(fun crc lane ->
+        let byte =
+          select
+            data ~high:((8 * lane) + 7) ~low:(8 * lane) (* grab a byte out of the data mask*)
+        in
+
+        mux2
+        (* is the byte in the word valid? *)
+          (bit valid_bytes ~pos:lane)
+
+       (* yes - provide the crc of the byte *)
+          (update_byte crc byte)
+
+        (* no - propagate the crc *)
+          crc
+      )
+[@@@ocamlformat "enable"]
 
 let fcs crc = ~:crc
 let has_valid_residue crc = crc ==: residue
