@@ -32,7 +32,7 @@
    CANDIDATE addresses. Only the popcount(keep) of them belonging to enabled lanes are
    meaningful; a masked lane's candidate aliases its nearest enabled neighbour above (or
    the first address of the next beat), and is discarded by the [write_keep_i] term in
-   [write_matches].
+   [lane_matches].
 
    THE INVARIANT. For the enabled lanes the prefix values are 0, 1, ..., k-1 where
    k = popcount(keep), so their addresses are the k consecutive integers
@@ -59,12 +59,17 @@
          lane->bank wiring would get wrong.
 
    WHY IT MATTERS BEYOND BANDWIDTH. Read from the bank's side, the invariant is what
-   makes [write_matches] one-hot, and one-hotness is what licenses the two [Array.foldi]
-   priority-mux chains that gather [write_data] and [write_address]. If two lanes could
-   ever match the same bank, the fold's arbitrary priority order would silently pick one
-   and drop the other's byte. So this is not merely an efficiency argument: the
-   crossbar's *correctness* rests on it. That is worth checking directly rather than only
-   inferring it from end-to-end data integrity.
+   makes [lane_matches] one-hot, and one-hotness is what licenses the two
+   [onehot_select] gathers that build [write_data] and [write_address]. Those emit
+   sresize(valid) &: value into a balanced OR tree, so if two lanes ever matched the same
+   bank their bytes would be OR-ed on top of each other. (The earlier form was an
+   [Array.foldi] chain of [mux2] -- a priority chain, which instead silently dropped the
+   lower lane's byte. Both are wrong and neither is louder, which is the point: nothing
+   in the netlist enforces one-hotness, so this test is what protects it. See the
+   commentary at [Mac_10g_packet_buffer]'s per-bank gather for why the tree replaced the
+   chain.) So this is not merely an efficiency argument: the crossbar's *correctness*
+   rests on it. That is worth checking directly rather than only inferring it from
+   end-to-end data integrity.
 
    COVERAGE NOTE. The sweep below is exhaustive over all eight rotations x all 255
    non-zero keep masks, including *non-contiguous* masks such as 0b1010_1010. AXI4-Stream
@@ -343,7 +348,7 @@ let%test_unit "the lane to bank map rotates with the pointer rather than being f
 let%test_unit "a masked lane aliases a real address yet drives no write" =
   (* The worked example from the module comment, scaled to this depth: pointer 6, keep
      0b0011_1111. Lanes 6 and 7 both compute the same candidate as the *next* beat's lane
-     0. If the [write_keep_i] term were dropped from [write_matches], that alias would
+     0. If the [write_keep_i] term were dropped from [lane_matches], that alias would
      corrupt a byte -- so pin both the alias and its suppression. *)
   let beat = beat ~rotation:6 ~keep:0b0011_1111 in
   [%test_result: int list]

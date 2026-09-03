@@ -439,7 +439,30 @@ module Make (Config : Config) = struct
                }))
         in
 
-        (* wtf is even this? *)
+        (* Row r of bank j holds ring byte 8r+j, so "row r" across all eight banks is one
+           8-byte ALIGNED block. A read window is eight consecutive bytes from an
+           arbitrary pointer, so it straddles two such blocks: with the pointer at
+           8R + B, banks B..7 serve it from row R and banks 0..B-1 from row R+1
+           (8-B bytes plus B bytes -- always eight).
+
+           That +1 is a recovered carry-out. Over in [read_data] the bank mux select is
+           [read_bank +:. lane], a 3-bit add whose carry is DISCARDED by truncation --
+           and that carry is exactly "this lane crossed a row boundary". It is not lost,
+           it is rebuilt here: bank j = (B + lane) mod 8 wrapped iff B + lane >= 8, and
+           since lane < 8 that happens iff j < B. Hence [read_bank >:. bank]. The two
+           lines are the two halves of one full-width [read_pointer + lane], split at the
+           bank/row boundary: low 3 bits steer the mux, the carry bumps the row.
+
+           It is recovered per-BANK rather than passed down from the lane because the
+           address port belongs to the bank, and the lane->bank map rotates every beat --
+           handing the carry across would need an 8x8 crossbar on the address, which is
+           what the write side pays for. Here [bank] is an OCaml int, so this is a 3-bit
+           compare against a constant: eight small comparators and eight increments
+           instead of eight full-width adders and a crossbar.
+
+           (The write side needs no such trick: [pointer_for_lane] is a full-width add,
+           so its carry already propagated into the row bits and [write_address] just
+           slices the answer off the top.) *)
         let read_address =
           read_row +: (uresize (read_bank >:. bank) ~width:bank_address_width)
         in
@@ -457,15 +480,51 @@ module Make (Config : Config) = struct
            ~read_addresses:[| read_address |]).(0))
     in
 
+    (* build the 64b beat *)
+    (* consider read_pointer = 259
+        this is 256 + 3 = 8 * 32 + 3 => read bank 3 (the +3 is a small item that would be encoded in the tail end
+        bits of the address - tells us which RAM bank). read row 32
+            => 32 is dervied from the upper bits (13:3) -> forms 32, which is the area in a given memory we want to access
+
+        read_address = read_row + (read_bank >: bank)
+
+
+       lane_mux => read_bank is 3, therefore bank = (3 + lane) mod 8
+        lane 0 => read_bank + lane = 3 + 0 = 3
+        lane 1 => 3 + 1 = 4
+        5 6 7 0 1 2 ...
+
+      the bottom 3 bits of the address determine where we start from in the little map between lanes and banks
+*)
     let read_data =
       concat_lsb (* scalar concate *)
-        (List.init 8 ~f:(fun lane ->
-           let bank = select (read_bank +:. lane) ~high:2 ~low:0 in
-           mux bank bank_outputs))
+        (List.init 8 ~f:(fun lane -> (* we select into 8 possible banks *)
+           (* [+:.] coerces the int to [read_bank]'s width, so this is a 3-bit add with
+              no carry out -- the mod 8 wrap is the truncation itself, not a separate
+              step. Slicing [2:0] off the result would be a no-op. *)
+           let bank = read_bank +:. lane in
+            (* select from (read_bank + lane)
+              for example, bank 2, lane 3 => 5
+              select index 5 from the bank_outputs group *)
+           mux
+             (bank : t) (* select via the bank *)
+             (bank_outputs : t list) (* Signal.t list to select inside of *)
+           )
+        )
     in
 
+    (* hardening *)
     let read_count_ext = uresize accepted_read_count ~width:length_width in
-    let rollback_count = mux2 i.rollback_i speculative_length.value (zero length_width) in
+
+    (* how much rollback? for counter pulses *)
+    let rollback_count =
+      mux2
+        i.rollback_i
+        speculative_length.value
+        (zero length_width)
+    in
+
+    (* for counters *)
     let next_bytes_used =
       bytes_used.value +: accepted_count_ext -: read_count_ext -: rollback_count
     in
