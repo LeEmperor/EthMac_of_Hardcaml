@@ -325,7 +325,8 @@ module Make (Config : Config) = struct
             (* for example if i have 10B in the mem first, and then am going to rwite 20
             in the next write beat, add this to the speculative_pointer's value *)
         in (* the new pointer value is added with the number of items written into the mem? *)
-        speculative_pointer.value +: (uresize prefix ~width:address_width)
+        (speculative_pointer.value +: (uresize prefix ~width:address_width))
+        -- sprintf "pointer_for_lane_%d" lane
         )
     in
 
@@ -335,15 +336,22 @@ module Make (Config : Config) = struct
     (* the other bits in the read pointer *)
     let read_row = select read_pointer.value ~high:(address_width - 1) ~low:3 in
 
-    (*  *)
+    (* actually get outputs *)
     let bank_outputs =
       List.init 8 ~f:(fun bank ->
+        (* see who's requesting to write into a bank *)
+        (* match using the indexes that we can make into the pointer_for_lane construct *)
         let write_matches =
           Array.init 8 ~f:(fun lane ->
             let destination_bank = select pointer_for_lane.(lane) ~high:2 ~low:0 in
             write_accepted &: bit i.write_keep_i ~pos:lane &: (destination_bank ==:. bank))
         in
-        let write_enable = Array.reduce_exn write_matches ~f:( |: ) in
+
+        (*bruh*)
+        let write_enable =
+          Array.reduce_exn write_matches ~f:( |: ) -- sprintf "bank_write_enable_%d" bank
+        in
+
         let write_data =
           Array.foldi write_matches ~init:(zero 8) ~f:(fun lane data selected ->
             mux2

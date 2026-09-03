@@ -6,6 +6,7 @@
  (name mac_10g_packet_buffer_inline_tests)
  (modules
   packet_buffer_testbench
+  packet_buffer_bank_mapping_tests
   packet_buffer_unit_quickcheck_tests
   packet_buffer_expect_tests
   packet_buffer_hierarchy_tests)
