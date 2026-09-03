@@ -317,7 +317,7 @@ module Make (Config : Config) = struct
     (* think of this as 8 candidate addresses into the ring *)
     let pointer_for_lane =
       Array.init 8 ~f:(fun lane -> (* 8 lanes, indexable *)
-        let prefix =
+        let prefix = (* prefix sum -> if something comes at idx 3, then idxs 2, 1, 0 are all true as well -> AXI spec *)
           List.range 0 lane (* from 0 to lane dis-inclusive; consider 64 -> [0:7] *)
           |> List.fold ~init:(zero 4) ~f:(fun count previous_lane ->
               count +: uresize (bit i.write_keep_i ~pos:previous_lane) ~width:4
@@ -330,48 +330,120 @@ module Make (Config : Config) = struct
         )
     in
 
+    (* consider the spare mask example:
+        keep = 0b10_10_10_10 (lanes 1, 3, 5, 7; k = 4), assuming pointer of 254
+
+        | lane | keep | prefix | pointer | bank |
+        |---|---|---|---|---|
+        | 0 | 0 | 0 | 254 | 6 | ← aliases lane 1
+        | 1 | 1 | 0 | 254 | 6 |
+        | 2 | 0 | 1 | 255 | 7 | ← aliases lane 3 (* one-hot is violated, but the keep makes sure it doesn't matter *)
+        | 3 | 1 | 1 | 255 | 7 |
+        | 4 | 0 | 2 | 256 | 0 |
+        | 5 | 1 | 2 | 256 | 0 |
+        | 6 | 0 | 3 | 257 | 1 |
+        | 7 | 1 | 3 | 257 | 1 |
+
+      the four REAL bytes land at 254, 255, 256, 257 in the ring itself -> contiguous
+
+     *)
+
     (* mem bank select *)
     let read_bank = select read_pointer.value ~high:2 ~low:0 in
 
     (* the other bits in the read pointer *)
     let read_row = select read_pointer.value ~high:(address_width - 1) ~low:3 in
 
-    (* actually get outputs *)
-    let bank_outputs =
-      List.init 8 ~f:(fun bank ->
+    (* actually get outputs -> this instantiates the RAMs themselves *)
+    let (bank_outputs : t list) = (* Signal.t list *)
+      (* think of this system as having an 8x8 crossbar for lanes into banks; timing should be fine *)
+      (* rest on the convention that addr[2:0] => which bank *)
+      (* addr[addr_w:3] => where in that bank - this of this as a "row" *)
+      List.init 8 ~f:(fun bank -> (* for each bank *)
         (* see who's requesting to write into a bank *)
         (* match using the indexes that we can make into the pointer_for_lane construct *)
-        let write_matches =
-          Array.init 8 ~f:(fun lane ->
+        (* returns eight 8b combinationally read values out of the bank *)
+
+        (* which lane, if any is requesting into me? (me is a given bank in the list run) *)
+        (* NOTE: [write_accepted] is deliberately NOT in here. It is a late signal --
+           trace it back and it runs write_keep_i (an input pin) -> popcount ->
+           14b compare against (depth - bytes_used) -> AND. Putting it in the match term
+           would drag that whole chain in front of the data and address selects on all
+           8 banks x 18 bits. It only needs to gate [write_enable]: when the enable is
+           low the RAM ignores D and A, so those are don't-care and can be left
+           ungated. Hoisting it costs nothing and takes the deepest signal off the
+           widest path.
+
+          not sure if i need a spare constraint item to signify the "lateness" factor
+        *)
+        let lane_matches =
+          (* this array is one-hot *)
+          Array.init 8 ~f:(fun lane -> (* named arg on the Array init is the lane number *)
+              (* snatch the pointer from the indexing that pointer_for_lane provides as an array *)
             let destination_bank = select pointer_for_lane.(lane) ~high:2 ~low:0 in
-            write_accepted &: bit i.write_keep_i ~pos:lane &: (destination_bank ==:. bank))
+
+            (* the keep is solid, and the destination bank for the lane is this bank *)
+            bit i.write_keep_i ~pos:lane (* necessary for collision handling *)
+            &: (destination_bank ==:. bank) (* comparator AND *)
+          )
         in
 
         (*bruh*)
+        (* comparator *)
+        (* the ONLY place write_accepted enters the per-bank logic *)
         let write_enable =
-          Array.reduce_exn write_matches ~f:( |: ) -- sprintf "bank_write_enable_%d" bank
+          (write_accepted &: Array.reduce_exn lane_matches ~f:( |: ))
+          -- sprintf "bank_write_enable_%d" bank
         in
 
+        (* 8:1 byte mux and 8:1 row mux, both driven by the same one-hot select.
+
+           in the example of 6 keep, with 254 of the speculation pointer, we have
+           6 7 0 1 2 3 X X as our pointer_for_lane ->
+               lane 0 wants bank 6
+               lane 2 wants bank 0
+             -> lane_matches for bank 0 = [0; 0; 1; 0; 0; 0; 0; 0;]
+               the entry represents a one-hot encoding of the lane wanting this bank
+
+           These used to be [Array.foldi] chains of [mux2], which build a PRIORITY
+           chain: mux2 m7 b7 (mux2 m6 b6 (... (mux2 m0 b0 0))). That is correct only
+           because at most one match is ever hot -- but nothing in the netlist says so,
+           and synthesis cannot flatten a priority chain into a balanced tree without
+           knowing mutual exclusivity, so the depth was real (~4 LUT6 levels once
+           packed). [onehot_select] emits sresize(valid) &: value into a balanced OR
+           tree instead: ~2 LUT6 levels, roughly half the LUTs, and the name states
+           the invariant that packet_buffer_bank_mapping_tests proves exhaustively.
+
+           Failure mode if the invariant were ever broken: the old chain silently
+           dropped the lower lane's byte; onehot_select ORs the colliding bytes
+           together. Both are wrong, neither is louder -- the test is what protects us,
+           which is why it is a separate structural test rather than left to
+           end-to-end data integrity *)
         let write_data =
-          Array.foldi write_matches ~init:(zero 8) ~f:(fun lane data selected ->
-            mux2
-              selected
-              (select i.write_data_i ~high:((8 * lane) + 7) ~low:(8 * lane))
-              data)
+          onehot_select (* AND/OR mux tree -> might need some backing formal to go with it *)
+            (* select over 8 signals *)
+            (List.init 8 ~f:(fun lane -> (* list of (select-line, data) pairs; With_valid names
+                    the valid instead of us needing an extra List.map call with ~f:fst *)
+                { With_valid.valid = lane_matches.(lane) (* With_valid very coool ig *)
+                ; value = select i.write_data_i ~high:((8 * lane) + 7) ~low:(8 * lane) (* lane-th byte of the 64b beat *)
+                }
+               )
+            )
         in
+
         let write_address =
-          Array.foldi
-            write_matches
-            ~init:(zero bank_address_width)
-            ~f:(fun lane address selected ->
-              mux2
-                selected
-                (select pointer_for_lane.(lane) ~high:(address_width - 1) ~low:3)
-                address)
+          onehot_select
+            (List.init 8 ~f:(fun lane ->
+               { With_valid.valid = lane_matches.(lane)
+               ; value = select pointer_for_lane.(lane) ~high:(address_width - 1) ~low:3
+               }))
         in
+
+        (* wtf is even this? *)
         let read_address =
-          read_row +: uresize (read_bank >:. bank) ~width:bank_address_width
+          read_row +: (uresize (read_bank >:. bank) ~width:bank_address_width)
         in
+
         (multiport_memory
            ~name:(sprintf "byte_bank_%d" bank)
            (Config.depth_bytes / 8)
