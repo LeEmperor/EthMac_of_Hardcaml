@@ -1,0 +1,16 @@
+(library
+ (name pcs_tx_encoder_inline_tests)
+ (modules
+  pcs_tx_encoder_testbench
+  pcs_tx_encoder_unit_quickcheck_tests
+  pcs_tx_encoder_expect_tests)
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries core hardcaml pcs_of_hardcaml)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
