@@ -38,6 +38,7 @@ import sys
 TARGETS = [
     ("mac", "hardcaml_eth_mac.v"),
     ("udp", "hardcaml_udp_with_mac.v"),
+    ("udp-rx-64", "hardcaml_udp_rx_64_with_mac.v"),
     ("mac-validation", "validation/mac_validation_harness.v"),
     ("udp-tx-validation", "validation/udp_tx_validation_harness.v"),
     ("udp-rx-validation", "validation/udp_rx_validation_harness.v"),

@@ -11,6 +11,7 @@ open! Signal
  *
  *   dune exec lib/common/generate.exe -- mac
  *   dune exec lib/common/generate.exe -- udp
+ *   dune exec lib/common/generate.exe -- udp-rx-64
  *   dune exec lib/common/generate.exe -- mac-validation
  *   dune exec lib/common/generate.exe -- udp-tx-validation
  *   dune exec lib/common/generate.exe -- udp-rx-validation
@@ -19,6 +20,7 @@ open! Signal
  * Targets:
  *   mac                    standalone Ethernet MAC        -> hardcaml_eth_mac.v
  *   udp                    UDP-over-MAC stack             -> hardcaml_udp_with_mac.v
+ *   udp-rx-64              RX-only UDP-over-MAC, 64-bit app stream -> hardcaml_udp_rx_64_with_mac.v
  *   mac-validation         board MAC harness (bare MAC, both dirs) -> validation/mac_validation_harness.v
  *   udp-tx-validation      board UDP TX harness (fpga->laptop, btn[3]) -> validation/udp_tx_validation_harness.v
  *   udp-rx-validation      board UDP RX harness (laptop->fpga, 1B/s drain) -> validation/udp_rx_validation_harness.v
@@ -35,6 +37,7 @@ open! Signal
 
 module Circ_mac = Circuit.With_interface (Mac_top.I) (Mac_top.O)
 module Circ_udp = Circuit.With_interface (Udp_mac_top.I) (Udp_mac_top.O)
+module Circ_udp_rx_64 = Circuit.With_interface (Udp_rx_64_mac_top.I) (Udp_rx_64_mac_top.O)
 
 module Circ_validation =
   Circuit.With_interface (Mac_validation_harness.I) (Mac_validation_harness.O)
@@ -92,6 +95,19 @@ let udp_cmd =
       ~scope
       ~path:"hardcaml_udp_with_mac.v"
       (Circ_udp.create_exn ~name:"Udp_stack_w_mac" (Udp_mac_top.create scope)))
+;;
+
+let udp_rx_64_cmd =
+  target
+    ~summary:
+      "RX-only UDP-over-MAC with 64-bit app stream -> hardcaml_udp_rx_64_with_mac.v"
+    ~build:(fun scope ->
+      emit
+        ~scope
+        ~path:"hardcaml_udp_rx_64_with_mac.v"
+        (Circ_udp_rx_64.create_exn
+           ~name:"udp_rx_64_mac_top"
+           (Udp_rx_64_mac_top.create scope)))
 ;;
 
 let mac_validation_cmd =
@@ -169,6 +185,7 @@ let () =
        ~summary:"Hardcaml RTL generators (pick a target)"
        [ "mac", mac_cmd
        ; "udp", udp_cmd
+       ; "udp-rx-64", udp_rx_64_cmd
        ; "mac-validation", mac_validation_cmd
        ; "udp-tx-validation", udp_tx_validation_cmd
        ; "udp-rx-validation", udp_rx_validation_cmd

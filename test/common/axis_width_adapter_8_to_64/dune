@@ -1,0 +1,21 @@
+(library
+ (name axis_width_adapter_8_to_64_inline_tests)
+ (modules
+  axis_width_adapter_8_to_64_testbench
+  axis_width_adapter_8_to_64_unit_quickcheck_tests
+  axis_width_adapter_8_to_64_expect_tests)
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries
+  core
+  hardcaml
+  helper_circuits
+  hardcaml_step_testbench
+  hardcaml_verif)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
