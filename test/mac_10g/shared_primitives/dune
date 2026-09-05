@@ -1,0 +1,27 @@
+; University of Florida
+; Author: Bohdan Purtell
+; Masked CRC and AXI keep-helper verification.
+
+(library
+ (name mac_10g_shared_primitives_inline_tests)
+ (modules
+  shared_primitives_testbench
+  shared_primitives_unit_quickcheck_tests
+  shared_primitives_expect_tests
+  shared_primitives_hierarchy_tests)
+ ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries
+  core
+  hardcaml
+  hardcaml_step_testbench
+  hardcaml_verif
+  mac_10g_of_hardcaml)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))

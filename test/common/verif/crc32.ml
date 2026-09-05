@@ -55,6 +55,13 @@ let byte crc input_byte =
 (* if we name a fold function an origami is that cool *)
 let bytes ?(init = init) input_bytes = List.fold input_bytes ~init ~f:byte
 
+(* A software-only model of the 10G masked word primitive. [data] is in XGMII/AXI lane
+   order, so list element zero corresponds to mask bit zero. *)
+let masked_bytes ?(init = init) data ~valid_bytes =
+  List.foldi data ~init ~f:(fun lane crc input_byte ->
+    if valid_bytes land (1 lsl lane) <> 0 then byte crc input_byte else crc)
+;;
+
 (* The FCS word: the accumulator after the final inversion. *)
 let fcs input_bytes = bytes input_bytes lxor 0xFFFFFFFF
 

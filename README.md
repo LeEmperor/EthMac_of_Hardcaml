@@ -30,11 +30,13 @@ The MAC knows nothing about IP or UDP — `mii_of_hardcaml` has no dependency on
 layers. "Including a UDP/IP stack" is a question of what you instantiate *around* the MAC,
 which is what the tops in `lib/udp/` do.
 
-Two longer-form notes live alongside the code:
+Longer-form design and verification notes live alongside the code:
 
 - `HardcamlDocs.md` — Hardcaml usage notes (Cyclesim, Evsim, the Always DSL, and so on).
 - `test/test_architecture.md` — how the verification suites are structured, written from a
   UVM background.
+- `docs/mac_10g_plan.md` — proposed architecture, interface contracts, register map, and
+  phased construction plan for the 64-bit XGMII/AXI 10G MAC.
 
 <br>
 

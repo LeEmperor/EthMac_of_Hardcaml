@@ -1,0 +1,21 @@
+; University of Florida
+; Author: Bohdan Purtell
+; Phase-0 interface and elaboration contract for the 10G MAC.
+
+(library
+ (name mac_10g_interface_contract_inline_tests)
+ (modules
+  interface_contract_testbench
+  interface_contract_unit_quickcheck_tests
+  interface_contract_expect_tests)
+ ; See test/test_architecture.md: ppx_expect v0.18~preview source-root workaround.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries core hardcaml mac_10g_of_hardcaml xgmii_of_hardcaml)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane))
+ (lint
+  (pps ppx_js_style))
+ (flags
+  (:standard -w -27-57-33-34-35-40-63-47-26)))
