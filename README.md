@@ -135,6 +135,7 @@ comment-toggling of the generator source:
 ```sh
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp
+./scripts/with-switch.sh dune exec lib/common/generate.exe -- udp-rx-64
 ./scripts/with-switch.sh dune exec lib/common/generate.exe -- mac-validation
 ```
 
@@ -142,11 +143,20 @@ comment-toggling of the generator source:
 | --- | --- |
 | `mac` | standalone Ethernet MAC |
 | `udp` | UDP-over-MAC stack |
+| `udp-rx-64` | RX-only UDP-over-MAC stack with a 64-bit application stream |
 | `mac-validation` | board MAC harness (bare MAC, both directions) |
 | `udp-tx-validation` | board UDP TX harness (fpga -> laptop, `btn[3]`) |
 | `udp-rx-validation` | board UDP RX harness (laptop -> fpga, 1 B/s drain) |
 | `udp-duplex-validation` | full-duplex UDP harness, decoupled TX + RX |
 | `udp-loopback-validation` | echo/loopback UDP harness, RX->TX bridge |
+
+The `udp-rx-64` target is intended for functional integration with applications normally
+fed by a 64-bit 10G MAC. It keeps the MII, Ethernet, IPv4, and UDP receive path byte-wide,
+then packs the stripped UDP payload into `app_tdata_o[63:0]`. The first received byte is
+in `app_tdata_o[7:0]`; `app_tkeep_o[7:0]` marks valid lanes on the final beat, and
+`app_tvalid_o/app_tready_i/app_tlast_o/app_tfirst_o` retain normal AXI-stream backpressure
+and framing semantics. This reproduces the data interface, not 10G arrival timing: an Arty
+100 Mb/s PHY supplies bytes far more slowly than a 64-bit 10G MAC.
 
 Run `dune exec lib/common/generate.exe -- -help` for the current list. Output paths are
 resolved against the repo root, so the RTL lands in a stable place no matter where the
